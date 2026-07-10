@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 13,
     lineHeight: 18,
-    color: colors.inkMuted,
+    color: colors.inkMutedOnDark,
     marginTop: 4,
   },
   closeBtn: {
@@ -305,9 +305,9 @@ const styles = StyleSheet.create({
   rowDisabled: { opacity: 0.55 },
   rowHead: { marginBottom: 8 },
   rowLabel: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  rowLabelDisabled: { color: colors.inkMuted },
-  rowSub: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMuted, marginTop: 3 },
-  rowSubDisabled: { color: colors.inkMuted },
+  rowLabelDisabled: { color: colors.inkMutedOnDark },
+  rowSub: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMutedOnDark, marginTop: 3 },
+  rowSubDisabled: { color: colors.inkMutedOnDark },
 
   segment: {
     flexDirection: 'row',
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
   unavailable: {
     fontFamily: fonts.mono,
     fontSize: 11,
-    color: colors.inkMuted,
+    color: colors.inkMutedOnDark,
     textTransform: 'lowercase',
   },
 });

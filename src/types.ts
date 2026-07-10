@@ -86,4 +86,10 @@ export interface TeleprompterPrefs {
   /** 0..1 fraction from the top of the frame where the reading line sits. */
   readingLinePosition: number;
   mirrorText: boolean;
+  /**
+   * Auto-scroll start behavior when recording begins. 'system' respects the OS
+   * Reduce Motion setting (the prompter starts paused when Reduce Motion is on);
+   * 'always' auto-starts scrolling regardless — the user's informed override.
+   */
+  autoScrollMode: 'system' | 'always';
 }

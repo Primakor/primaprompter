@@ -145,5 +145,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 4,
   },
-  linkText: { fontSize: 13, color: colors.inkMuted },
+  linkText: { fontSize: 13, color: colors.inkMutedOnDark, textDecorationLine: 'underline' },
 });

@@ -83,6 +83,7 @@ export function RecordScreen() {
   const [resetKey, setResetKey] = useState(0);
   const [cameraReady, setCameraReady] = useState(false);
   const [sheet, setSheet] = useState<null | 'capture' | 'prompter'>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   const cameraRef = useRef<Camera>(null);
   const startTs = useRef(0);
@@ -114,6 +115,16 @@ export function RecordScreen() {
     };
   }, []);
 
+  // Track the OS Reduce Motion setting so recording can begin paused when it's on.
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion
+    );
+    return () => sub.remove();
+  }, []);
+
   const hasCamera = !!device && camera.hasPermission;
   const canCapture = hasCamera && cameraReady;
 
@@ -122,7 +133,10 @@ export function RecordScreen() {
 
   const beginRecording = useCallback(() => {
     setMode('recording');
-    setPlaying(true);
+    // Respect Reduce Motion: under 'system' the prompter begins paused so the
+    // take doesn't open with motion the user didn't ask for. 'always' overrides.
+    const autoStart = prefs.autoScrollMode === 'always' || !reduceMotion;
+    setPlaying(autoStart);
     AccessibilityInfo.announceForAccessibility('Recording started');
     startTs.current = Date.now();
     setElapsed(0);
@@ -153,7 +167,7 @@ export function RecordScreen() {
         },
       });
     }
-  }, [canCapture, capture, scriptId, nav]);
+  }, [canCapture, capture, scriptId, nav, prefs.autoScrollMode, reduceMotion]);
 
   const startCapture = useCallback(() => {
     setResetKey((k) => k + 1);
@@ -361,7 +375,13 @@ export function RecordScreen() {
           prefs={prefs}
           height={bandHeight}
           resetKey={resetKey}
-          onTogglePlay={() => setPlaying((p) => !p)}
+          onTogglePlay={() => {
+            const next = !playing;
+            setPlaying(next);
+            AccessibilityInfo.announceForAccessibility(
+              next ? 'Teleprompter playing' : 'Teleprompter paused'
+            );
+          }}
         />
       </View>
 
@@ -416,7 +436,9 @@ export function RecordScreen() {
 
       {recording && (
         <Text style={styles.hint} pointerEvents="none">
-          Tap the script to pause · Stop to finish
+          {playing
+            ? 'Tap the script to pause · Stop to finish'
+            : 'Auto-scroll off — tap the script to start'}
         </Text>
       )}
 

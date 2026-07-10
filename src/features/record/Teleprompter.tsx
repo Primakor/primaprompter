@@ -121,8 +121,12 @@ export function Teleprompter({
           style={styles.clip}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={playing ? 'Pause teleprompter' : 'Play teleprompter'}
-          accessibilityHint="Toggles auto-scroll"
+          accessibilityLabel={playing ? 'Teleprompter, playing' : 'Teleprompter, paused'}
+          accessibilityHint={
+            playing
+              ? 'Double-tap to pause. Swipe up or down to move through the script.'
+              : 'Double-tap to play. Swipe up or down to move through the script.'
+          }
           onAccessibilityTap={onTogglePlay}
           accessibilityValue={{ now: scrubPct, min: 0, max: 100 }}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}

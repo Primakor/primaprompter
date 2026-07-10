@@ -24,6 +24,17 @@ const TYPEFACES: { key: PrompterFont; label: string }[] = [
   { key: 'system', label: 'SF' },
 ];
 
+// Auto-scroll start behavior. 'Follow system' honours the OS Reduce Motion
+// setting (prompter starts paused when it's on); 'Always on' is the informed
+// override that always auto-starts scrolling when recording begins.
+const AUTOSCROLL_MODES: {
+  key: TeleprompterPrefs['autoScrollMode'];
+  label: string;
+}[] = [
+  { key: 'system', label: 'Follow system' },
+  { key: 'always', label: 'Always on' },
+];
+
 // The three prompter typefaces map onto whatever font families ship on-device.
 // Lexend/OpenDyslexic aren't bundled yet, so we approximate for the preview.
 // TODO(native-batch): register real Lexend + OpenDyslexic font assets.
@@ -149,6 +160,29 @@ export function PrompterAppearanceSheet({ prefs, onChange, onClose }: Props) {
           step={5}
           onValue={(v) => patch({ defaultWpm: v })}
         />
+      </View>
+
+      <View style={styles.block}>
+        <Text style={styles.label}>Auto-scroll</Text>
+        <View style={styles.segment}>
+          {AUTOSCROLL_MODES.map(({ key, label }) => {
+            const on = prefs.autoScrollMode === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => patch({ autoScrollMode: key })}
+                style={[styles.segItem, on && styles.segItemOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`Auto-scroll ${label}`}
+              >
+                <Text style={[styles.segText, on && styles.segTextOn]}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <Toggle
@@ -410,7 +444,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  subtitle: { fontSize: 12, color: colors.inkMuted, marginTop: 2 },
+  subtitle: { fontSize: 12, color: colors.inkMutedOnDark, marginTop: 2 },
   readout: { fontFamily: fonts.mono, fontSize: 13, color: colors.tally },
 
   segment: {

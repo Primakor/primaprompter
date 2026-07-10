@@ -13,6 +13,7 @@ export const DEFAULT_TELEPROMPTER_PREFS: TeleprompterPrefs = {
   highContrast: false,
   readingLinePosition: 0.18,
   mirrorText: false,
+  autoScrollMode: 'system',
 };
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {

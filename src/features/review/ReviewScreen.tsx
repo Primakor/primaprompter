@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMuted },
+  badgeText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMutedOnDark },
   scissor: {
     width: 44,
     height: 44,
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   keepTint: { color: colors.tallyInk },
 
   missingTitle: { fontFamily: fonts.display, fontSize: 18, fontWeight: '700', color: '#EDEBE6', marginBottom: 8 },
-  missingBody: { fontSize: 13, lineHeight: 20, color: colors.inkMuted, textAlign: 'center', marginBottom: 20 },
+  missingBody: { fontSize: 13, lineHeight: 20, color: colors.inkMutedOnDark, textAlign: 'center', marginBottom: 20 },
   missingBtn: {
     height: 44,
     paddingHorizontal: 22,

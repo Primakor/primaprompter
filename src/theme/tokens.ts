@@ -10,6 +10,7 @@ export const colors = {
   paperCard: '#F3F1EB',
   ink: '#17181A',
   inkMuted: '#63646A',
+  inkMutedOnDark: '#A9ABB2', // dark-world muted only (7.1:1 on stage/stage2/camera)
   line: '#D6D2C7',
 
   // camera (dark) world
