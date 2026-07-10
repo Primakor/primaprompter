@@ -3,16 +3,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { LibraryScreen } from '../features/library/LibraryScreen';
 import { EditorScreen } from '../features/editor/EditorScreen';
-import { Placeholder } from '../components/Placeholder';
+import { RecordScreen } from '../features/record/RecordScreen';
+import { ReviewScreen } from '../features/review/ReviewScreen';
+import { TrimScreen } from '../features/trim/TrimScreen';
+import { GalleryScreen } from '../features/gallery/GalleryScreen';
+import { SettingsScreen } from '../features/settings/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-// Screens are swapped from placeholder → real as each phase lands.
-const RecordScreen = () => <Placeholder title="Record" dark />;
-const ReviewScreen = () => <Placeholder title="Take Review" dark />;
-const TrimScreen = () => <Placeholder title="Trim" dark />;
-const GalleryScreen = () => <Placeholder title="Takes" />;
-const SettingsScreen = () => <Placeholder title="Settings" />;
 
 export function RootNavigator() {
   return (
