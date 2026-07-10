@@ -1,4 +1,8 @@
-import * as MediaLibrary from 'expo-media-library';
+import { Platform } from 'react-native';
+// SDK 57 split the API: the top-level `saveToLibraryAsync`/`requestPermissionsAsync`
+// now THROW a deprecation error. The `/legacy` subpath keeps the stable functional
+// API. (v1.1 debt: migrate to the new class-based Asset API.)
+import * as MediaLibrary from 'expo-media-library/legacy';
 
 /**
  * Save a raw take to the system Photos library (add-only).
@@ -16,9 +20,15 @@ export async function saveTakeToPhotos(
   fileUri: string
 ): Promise<'saved' | 'denied' | 'error'> {
   try {
-    // writeOnly = true → add-only access, no read of existing assets.
-    const perm = await MediaLibrary.requestPermissionsAsync(true);
-    if (!perm.granted) return 'denied';
+    // iOS requires an add-only permission (NSPhotoLibraryAddUsageDescription →
+    // the writeOnly system dialog). Android 11+ contributes to MediaStore with NO
+    // runtime permission, and we still never read the library — so the add-only
+    // privacy stance holds on both platforms. (writeOnly is an iOS concept; on
+    // Android requesting it returns not-granted and would wrongly block the save.)
+    if (Platform.OS === 'ios') {
+      const perm = await MediaLibrary.requestPermissionsAsync(true);
+      if (!perm.granted) return 'denied';
+    }
 
     // Take paths can be bare filesystem paths; saveToLibraryAsync wants a URI.
     const localUri = /^\w+:\/\//.test(fileUri) ? fileUri : `file://${fileUri}`;

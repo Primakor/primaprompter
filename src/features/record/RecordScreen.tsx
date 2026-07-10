@@ -470,11 +470,25 @@ export function RecordScreen() {
         )}
       </View>
 
-      {sheet === 'capture' && (
-        <CaptureSettingsSheet settings={capture} onChange={applyCapture} onClose={() => setSheet(null)} />
-      )}
-      {sheet === 'prompter' && (
-        <PrompterAppearanceSheet prefs={prefs} onChange={applyPrefs} onClose={() => setSheet(null)} />
+      {/* Sheets are modal: a full-screen backdrop captures touches so the Record
+          controls behind can't be tapped (this let recording arm underneath an open
+          sheet), and tapping outside closes. Backdrop is transparent — no visual
+          change; a dimmed variant is a product-brain call. */}
+      {sheet && (
+        <View style={styles.sheetModal}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setSheet(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close sheet"
+          />
+          {sheet === 'capture' && (
+            <CaptureSettingsSheet settings={capture} onChange={applyCapture} onClose={() => setSheet(null)} />
+          )}
+          {sheet === 'prompter' && (
+            <PrompterAppearanceSheet prefs={prefs} onChange={applyPrefs} onClose={() => setSheet(null)} />
+          )}
+        </View>
       )}
     </View>
   );
@@ -482,6 +496,7 @@ export function RecordScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.stage },
+  sheetModal: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
   noCam: { backgroundColor: '#101216', alignItems: 'center', justifyContent: 'center' },
   noCamText: { color: 'rgba(255,255,255,0.4)', fontFamily: fonts.mono, fontSize: 12 },
   top: {
