@@ -470,14 +470,13 @@ export function RecordScreen() {
         )}
       </View>
 
-      {/* Sheets are modal: a full-screen backdrop captures touches so the Record
-          controls behind can't be tapped (this let recording arm underneath an open
-          sheet), and tapping outside closes. Backdrop is transparent — no visual
-          change; a dimmed variant is a product-brain call. */}
+      {/* Sheets are modal: a 0.5 black scrim (approved wireframes 06/07) captures
+          touches so the Record controls behind can't be tapped (this let recording
+          arm underneath an open sheet), dims the live preview, and tap-outside closes. */}
       {sheet && (
         <View style={styles.sheetModal}>
           <Pressable
-            style={StyleSheet.absoluteFill}
+            style={styles.sheetScrim}
             onPress={() => setSheet(null)}
             accessibilityRole="button"
             accessibilityLabel="Close sheet"
@@ -497,6 +496,7 @@ export function RecordScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.stage },
   sheetModal: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
+  sheetScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   noCam: { backgroundColor: '#101216', alignItems: 'center', justifyContent: 'center' },
   noCamText: { color: 'rgba(255,255,255,0.4)', fontFamily: fonts.mono, fontSize: 12 },
   top: {
