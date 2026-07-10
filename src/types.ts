@@ -71,6 +71,8 @@ export interface CaptureSettings {
   cameraPosition: CameraPosition;
   gridEnabled: boolean;
   countdownSeconds: CountdownSeconds;
+  /** Mirror the SAVED video horizontally (output only; preview is lens-handled). */
+  mirrorOutput: boolean;
 }
 
 export type PrompterFont = 'system' | 'lexend' | 'dyslexic';

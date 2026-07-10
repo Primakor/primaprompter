@@ -421,6 +421,7 @@ export function RecordScreen() {
           animatedProps={animatedProps}
           exposure={exposure}
           torch={torch ? 'on' : 'off'}
+          isMirrored={capture.mirrorOutput}
           onInitialized={() => setCameraReady(true)}
           onError={(e) => {
             console.warn('[camera]', e.message);

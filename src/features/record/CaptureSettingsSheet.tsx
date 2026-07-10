@@ -250,6 +250,13 @@ export function CaptureSettingsSheet({
       />
 
       <ToggleRow
+        label="Mirror"
+        subtitle="Save video the way you see it in preview."
+        value={settings.mirrorOutput}
+        onToggle={(v) => patch({ mirrorOutput: v })}
+      />
+
+      <ToggleRow
         label="HDR"
         subtitle={
           hdrAvailable

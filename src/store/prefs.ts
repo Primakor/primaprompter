@@ -26,6 +26,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   cameraPosition: 'front',
   gridEnabled: false,
   countdownSeconds: 3,
+  mirrorOutput: false,
 };
 
 function getKv(key: string): string | null {
