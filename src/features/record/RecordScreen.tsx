@@ -19,6 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Camera,
   useCameraDevice,
+  useCameraFormat,
   useCameraPermission,
   useMicrophonePermission,
   type VideoFile,
@@ -37,6 +38,7 @@ import {
   setCaptureSettings,
 } from '../../store/prefs';
 import { useKeepAwake } from '../../lib/keepAwake';
+import { computeSupport } from '../../lib/cameraCapabilities';
 import { Teleprompter } from './Teleprompter';
 import { CaptureSettingsSheet } from './CaptureSettingsSheet';
 import { PrompterAppearanceSheet } from './PrompterAppearanceSheet';
@@ -74,6 +76,23 @@ export function RecordScreen() {
   const [prefs, setPrefs] = useState<TeleprompterPrefs>(() => getTeleprompterPrefs());
   const [capture, setCapture] = useState(() => getCaptureSettings());
   const device = useCameraDevice(capture.cameraPosition);
+  // Pin the <Camera> to a device format matching the chosen capture settings.
+  // useCameraFormat tolerates device === undefined and returns undefined.
+  const format = useCameraFormat(device, [
+    {
+      videoResolution:
+        capture.resolution === '4k'
+          ? { width: 3840, height: 2160 }
+          : { width: 1920, height: 1080 },
+    },
+    { fps: capture.fps },
+    ...(capture.hdrEnabled ? [{ videoHdr: true }] : []),
+  ]);
+  // Real capability gating for the Capture sheet, derived from the device's formats.
+  const { supported, hdrAvailable } = useMemo(
+    () => computeSupport(device, capture.resolution, capture.fps),
+    [device, capture.resolution, capture.fps]
+  );
 
   const [script, setScript] = useState<Script | null>(null);
   const [mode, setMode] = useState<Mode>('idle');
@@ -144,6 +163,7 @@ export function RecordScreen() {
 
     if (canCapture && cameraRef.current) {
       cameraRef.current.startRecording({
+        videoCodec: capture.codec === 'hevc' ? 'h265' : 'h264',
         onRecordingFinished: async (video: VideoFile) => {
           const dur = Date.now() - startTs.current;
           const take = await createTake({
@@ -311,6 +331,10 @@ export function RecordScreen() {
           isActive={mode !== 'finalizing'}
           video={true}
           audio={mic.hasPermission}
+          format={format}
+          fps={capture.fps}
+          videoHdr={capture.hdrEnabled && hdrAvailable}
+          videoStabilizationMode={capture.stabilizationMode}
           onInitialized={() => setCameraReady(true)}
           onError={(e) => {
             console.warn('[camera]', e.message);
@@ -482,7 +506,13 @@ export function RecordScreen() {
             accessibilityLabel="Close sheet"
           />
           {sheet === 'capture' && (
-            <CaptureSettingsSheet settings={capture} onChange={applyCapture} onClose={() => setSheet(null)} />
+            <CaptureSettingsSheet
+              settings={capture}
+              onChange={applyCapture}
+              onClose={() => setSheet(null)}
+              supported={supported}
+              hdrAvailable={hdrAvailable}
+            />
           )}
           {sheet === 'prompter' && (
             <PrompterAppearanceSheet prefs={prefs} onChange={applyPrefs} onClose={() => setSheet(null)} />

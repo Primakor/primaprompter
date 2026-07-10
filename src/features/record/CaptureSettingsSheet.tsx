@@ -16,10 +16,15 @@ export interface CaptureSettingsSheetProps {
   onClose: () => void;
   /**
    * Capability matrix keyed by option token (e.g. '4k', '60', 'hevc', 'hdr').
-   * Wired to the real device query later; unspecified keys are treated as
-   * supported. HDR is force-gated below regardless — see the HDR row.
+   * Derived from the real device query (see lib/cameraCapabilities); unspecified
+   * keys are treated as supported.
    */
   supported?: Partial<Record<string, boolean>>;
+  /**
+   * Whether HDR video is available for the current resolution + fps selection.
+   * Gates the HDR row (see below).
+   */
+  hdrAvailable?: boolean;
 }
 
 /** One option in a Segmented control. */
@@ -170,8 +175,10 @@ export function CaptureSettingsSheet({
   onChange,
   onClose,
   supported,
+  hdrAvailable,
 }: CaptureSettingsSheetProps) {
   const patch = (p: Partial<CaptureSettings>) => onChange({ ...settings, ...p });
+  const resLabel = settings.resolution === '4k' ? '4K' : '1080p';
 
   return (
     <View style={styles.sheet}>
@@ -244,11 +251,15 @@ export function CaptureSettingsSheet({
 
       <ToggleRow
         label="HDR"
-        subtitle="Checked per device — capability query pending"
+        subtitle={
+          hdrAvailable
+            ? `High dynamic range at ${resLabel}·${settings.fps}`
+            : `Not available at ${resLabel}·${settings.fps}`
+        }
         value={settings.hdrEnabled}
         onToggle={(v) => patch({ hdrEnabled: v })}
-        disabled
-        disabledNote="pending"
+        disabled={!hdrAvailable}
+        disabledNote={hdrAvailable ? undefined : 'unavailable'}
       />
     </View>
   );

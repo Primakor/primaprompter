@@ -14,7 +14,7 @@ This spec is the reconciled output of a research-and-synthesis workflow and an i
 
 **Positioning wedge.** The paid incumbents (BIGVU, Teleprompter.com, PromptSmart, Teleprompter Premium) monetize aggressively — launch-screen paywalls, trial-to-charge surprises, watermarks, "I bought it, now it's a subscription." The loudest complaint in the category is billing, not features. Separately, **no** existing project is a polished cross-platform *native* teleprompter-camera recorder with pro controls: the open-source recorders are iOS/macOS-only or web; the cross-platform OSS ones (e.g. TiefPrompt) don't record. That white space is PrimaPrompter's exact target.
 
-We win by making the **core loop flawless and nag-free** — script → eye-contact recording → clean take in Photos — and by exposing **pro camera controls nobody else fully surfaces** (60fps + 4K, tap-to-focus with AE/AF lock, exposure compensation, the stabilization ladder). "Free and open source, forever; your footage never leaves the device" is the honest, sharp answer to the market's #1 pain, and goes on the store page as a feature.
+We win by making the **core loop flawless and nag-free** — script → eye-contact recording → clean take in Photos — and by exposing **pro camera controls nobody else fully surfaces** (60fps + 4K, tap-to-focus, exposure compensation, the stabilization ladder). "Free and open source, forever; your footage never leaves the device" is the honest, sharp answer to the market's #1 pain, and goes on the store page as a feature.
 
 ## 2. Locked owner decisions
 
@@ -36,7 +36,7 @@ We win by making the **core loop flawless and nag-free** — script → eye-cont
 
 **Verified corrections** (adversarial verification, accepted):
 - Use **v4.7.3** — the earlier "use v5" research claim was wrong for Expo: v5.1.0 ships **no** Expo config plugin (`app.plugin.js` absent → `expo prebuild` fails), while the 4.7.x line is Expo-ready. Bootstrap-verified 2026-07-10; the native build vs RN 0.86 / SDK 57 is spike-validated.
-- Exposure control is **exposure-compensation bias + AE/AF lock**, NOT manual lens position or manual ISO/shutter. UI copy must never promise "manual exposure."
+- Exposure control is **exposure-compensation bias** (a brightness bias around auto-exposure), NOT manual lens position/ISO/shutter, and NOT a true AE/AF lock — vision-camera 4.7.3 exposes no lock/exposureMode API (`exposure` is compensation, not absolute), so AE/AF lock is deferred to v1.1/v5. UI copy must never promise "manual exposure" or "lock."
 - **cinematic / cinematic-extended stabilization are iOS-only**; Android exposes off / auto / standard. HEVC is device-dependent on Android. This is handled by the capability-driven UI.
 
 **Rejected alternatives:** Flutter (official camera plugin hides codec/HDR/exact-format/60fps; forces plugin fork or single-vendor lib), Kotlin/Compose Multiplatform (no mature pro-video camera lib; effectively writing native twice), native twin apps (violates the single-codebase lock; reserved only as documented fallback for any single control that proves unreachable in Vision Camera).
@@ -70,7 +70,7 @@ We win by making the **core loop flawless and nag-free** — script → eye-cont
 - **Formatting:** semi-transparent dark scrim behind the reading band only (never full-screen); white text with stroke/drop-shadow; adjustable band opacity; ~36–48pt-equivalent sans, line height 1.5–2.0, 2–4 lines visible; active line highlighted, neighbors dimmed. **Accessibility from day one:** OpenDyslexic + Lexend fonts, independent size/line-height/opacity, high-contrast theme, Dynamic Type, VoiceOver/TalkBack labels, min touch targets.
 
 ### 5.2 Recording controls
-- **Exposed:** front/back toggle; resolution (1080p/4K, format-gated); fps (24/30/60 where the format supports); codec (H.264/HEVC); video HDR (default-off, gated on `format.supportsVideoHdr`); stabilization (off/standard/cinematic/cinematic-extended/auto, platform- and format-gated); torch; continuous pinch zoom; tap-to-focus + exposure-compensation with AE/AF lock; grid; output orientation locked vertical-first.
+- **Exposed:** front/back toggle; resolution (1080p/4K, format-gated); fps (24/30/60 where the format supports); codec (H.264/HEVC); video HDR (default-off, gated on `format.supportsVideoHdr`); stabilization (off/standard/cinematic/cinematic-extended/auto, platform- and format-gated); torch; continuous pinch zoom; tap-to-focus + exposure-compensation (AE/AF lock deferred to v1.1 — no API in vision-camera 4.7.3); grid; output orientation locked vertical-first.
 - **HDR dependency rider:** HDR typically requires HEVC/10-bit — **H.264 + HDR is invalid on most devices**. The "grey out impossible combos" logic must cover the full **codec × HDR × fps** dependency matrix (spike-verified), not just single controls.
 - **Flip-saved-video (fenced):** ships v1 **only if** the SDK writes the mirror at record time (an `isMirrored`-style option — spike-verify). If it needs a re-encode, it defers to v2 with export presets. Not shown in wireframes until verified.
 - **Hidden** (out of scope): manual ISO/shutter, white balance, RAW, filters/beauty effects.
