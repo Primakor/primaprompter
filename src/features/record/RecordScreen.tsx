@@ -25,7 +25,11 @@ import {
   type VideoFile,
 } from 'react-native-vision-camera';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import Reanimated, {
+  runOnJS,
+  useSharedValue,
+  useAnimatedProps,
+} from 'react-native-reanimated';
 import { colors, fonts } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
 import type { CameraPosition, Script, TeleprompterPrefs } from '../../types';
@@ -40,9 +44,14 @@ import {
 import { useKeepAwake } from '../../lib/keepAwake';
 import { computeSupport } from '../../lib/cameraCapabilities';
 import { Teleprompter } from './Teleprompter';
+import { CameraCanvasControls } from './CameraCanvasControls';
 import { CaptureSettingsSheet } from './CaptureSettingsSheet';
 import { PrompterAppearanceSheet } from './PrompterAppearanceSheet';
 import { PermissionPrime } from './PermissionPrime';
+
+// Animated <Camera> so the pinch-driven `zoom` shared value can update the
+// native zoom on the UI thread via animatedProps (see CameraCanvasControls).
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Record'>;
 type Rt = RouteProp<RootStackParamList, 'Record'>;
@@ -94,6 +103,39 @@ export function RecordScreen() {
     [device, capture.resolution, capture.fps]
   );
 
+  // EFFECTIVE (post-format) values drive the <Camera> + badge — never the stored
+  // intent (which is RETAINED so a selfie flip doesn't erase a 4K rear pick). The
+  // Camera validates fps against the format, so a stale 60 (kept from the rear lens,
+  // then flipped to a front format maxing at 30) can throw — clamp it.
+  const effectiveFps = format ? Math.min(capture.fps, format.maxFps) : capture.fps;
+  const effectiveRes: '1080p' | '4k' = format
+    ? Math.max(format.videoWidth, format.videoHeight) >= 3840
+      ? '4k'
+      : '1080p'
+    : capture.resolution;
+  const degradedMsg = useMemo(() => {
+    const parts: string[] = [];
+    if (effectiveRes !== capture.resolution)
+      parts.push(
+        `${capture.resolution === '4k' ? '4K' : '1080p'} unavailable on this lens — recording ${effectiveRes === '4k' ? '4K' : '1080p'}`
+      );
+    if (effectiveFps !== capture.fps)
+      parts.push(`${capture.fps}fps unavailable — recording ${effectiveFps}`);
+    return parts.length ? parts.join(' · ') : null;
+  }, [effectiveRes, effectiveFps, capture.resolution, capture.fps]);
+  // Transient warning (~2.5s) fired when effective≠selected BECOMES true (lens flip
+  // or mount with degraded stored prefs); persistent truth lives in the Capture sheet.
+  const [degradedChip, setDegradedChip] = useState<string | null>(null);
+  useEffect(() => {
+    if (!degradedMsg) {
+      setDegradedChip(null);
+      return;
+    }
+    setDegradedChip(degradedMsg);
+    const t = setTimeout(() => setDegradedChip(null), 2500);
+    return () => clearTimeout(t);
+  }, [degradedMsg]);
+
   const [script, setScript] = useState<Script | null>(null);
   const [mode, setMode] = useState<Mode>('idle');
   const [countdown, setCountdown] = useState(0);
@@ -103,6 +145,14 @@ export function RecordScreen() {
   const [cameraReady, setCameraReady] = useState(false);
   const [sheet, setSheet] = useState<null | 'capture' | 'prompter'>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  // On-canvas camera controls: pinch drives `zoom` on the UI thread; tap-focus
+  // uses cameraRef.focus; the brightness slider drives exposure compensation;
+  // the torch chip toggles the rear-lens light.
+  const zoom = useSharedValue(device?.neutralZoom ?? 1);
+  const animatedProps = useAnimatedProps(() => ({ zoom: zoom.value }));
+  const [exposure, setExposure] = useState(0);
+  const [torch, setTorch] = useState(false);
 
   const cameraRef = useRef<Camera>(null);
   const startTs = useRef(0);
@@ -144,6 +194,11 @@ export function RecordScreen() {
     return () => sub.remove();
   }, []);
 
+  // Torch is a rear-lens light — flipping to the front camera turns it off.
+  useEffect(() => {
+    if (capture.cameraPosition === 'front') setTorch(false);
+  }, [capture.cameraPosition]);
+
   const hasCamera = !!device && camera.hasPermission;
   const canCapture = hasCamera && cameraReady;
 
@@ -173,7 +228,7 @@ export function RecordScreen() {
             durationMs: Math.round((video.duration ?? dur / 1000) * 1000),
             width: video.width ?? 1080,
             height: video.height ?? 1920,
-            fps: capture.fps,
+            fps: effectiveFps,
             codec: capture.codec,
             cameraPosition: capture.cameraPosition,
             fileSizeBytes: 0,
@@ -187,7 +242,7 @@ export function RecordScreen() {
         },
       });
     }
-  }, [canCapture, capture, scriptId, nav, prefs.autoScrollMode, reduceMotion]);
+  }, [canCapture, capture, effectiveFps, scriptId, nav, prefs.autoScrollMode, reduceMotion]);
 
   const startCapture = useCallback(() => {
     setResetKey((k) => k + 1);
@@ -324,7 +379,7 @@ export function RecordScreen() {
     <View style={styles.root}>
       {/* Preview: real camera on device, graceful backdrop in the simulator */}
       {hasCamera ? (
-        <Camera
+        <ReanimatedCamera
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           device={device!}
@@ -332,9 +387,12 @@ export function RecordScreen() {
           video={true}
           audio={mic.hasPermission}
           format={format}
-          fps={capture.fps}
+          fps={effectiveFps}
           videoHdr={capture.hdrEnabled && hdrAvailable}
           videoStabilizationMode={capture.stabilizationMode}
+          animatedProps={animatedProps}
+          exposure={exposure}
+          torch={torch ? 'on' : 'off'}
           onInitialized={() => setCameraReady(true)}
           onError={(e) => {
             console.warn('[camera]', e.message);
@@ -347,6 +405,23 @@ export function RecordScreen() {
             {device ? 'Camera off' : 'No camera on this device — rehearsal mode'}
           </Text>
         </View>
+      )}
+
+      {/* On-canvas pro controls: sits just above the camera (zIndex 5) and below
+          the band/chrome/rail/controls (zIndex 10+), so only bare-preview touches
+          reach its pinch-zoom + tap-focus. */}
+      {hasCamera && device && (
+        <CameraCanvasControls
+          device={device}
+          cameraRef={cameraRef}
+          zoom={zoom}
+          exposure={exposure}
+          onExposureChange={setExposure}
+          torch={torch}
+          onToggleTorch={() => setTorch((t) => !t)}
+          showTorch={device.hasTorch && capture.cameraPosition === 'back'}
+          recording={mode === 'recording'}
+        />
       )}
 
       {/* top chrome */}
@@ -365,7 +440,7 @@ export function RecordScreen() {
               <Text style={styles.tcode}>{tc(0)}</Text>
               <Pressable style={styles.badge} onPress={() => setSheet('capture')} accessibilityRole="button" accessibilityLabel="Capture settings">
                 <Text style={styles.badgeText}>
-                  <Text style={styles.badgeAccent}>{capture.resolution === '4k' ? '4K' : '1080'}</Text>·{capture.fps}
+                  <Text style={styles.badgeAccent}>{effectiveRes === '4k' ? '4K' : '1080'}</Text>·{effectiveFps}
                 </Text>
               </Pressable>
             </View>
@@ -389,6 +464,16 @@ export function RecordScreen() {
           </Pressable>
         </View>
       )}
+
+      {/* transient degradation cue (~2.5s): the current lens can't do the picked res/fps */}
+      {degradedChip ? (
+        <View
+          style={[styles.degraded, { top: insets.top + (hasCamera && !mic.hasPermission ? 96 : 52) }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.degradedText}>{degradedChip}</Text>
+        </View>
+      ) : null}
 
       {/* teleprompter band, pinned to the calibrated eyeline */}
       <View style={[styles.bandWrap, { top: bandTop }]}>
@@ -565,6 +650,18 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7 },
   badgeText: { fontFamily: fonts.mono, fontSize: 11, fontWeight: '600', color: '#fff' },
   badgeAccent: { color: colors.tally, fontWeight: '700' },
+  degraded: { position: 'absolute', left: 12, right: 12, alignItems: 'center', zIndex: 22 },
+  degradedText: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.tally,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 999,
+    overflow: 'hidden',
+    textAlign: 'center',
+  },
   recPill: {
     flexDirection: 'row',
     alignItems: 'center',
