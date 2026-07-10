@@ -41,7 +41,8 @@
           "isAccessMediaLocationEnabled": false,
           "preventAutomaticLimitedAccessAlert": true
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

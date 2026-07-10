@@ -17,11 +17,12 @@ type Props = {
   onClose: () => void;
 };
 
-// Only the bundled system face is offered for now. Lexend + OpenDyslexic render
-// placeholder system fonts today, which would falsely imply real support — they
-// stay hidden until the font assets are registered (fast-follow; see familyFor).
+// System + Lexend (real, bundled via @expo-google-fonts/lexend, loaded in App.tsx).
+// OpenDyslexic isn't bundled yet — it needs its OFL .ttf — so it stays hidden until
+// that asset is registered, to avoid falsely implying dyslexia support (see familyFor).
 const TYPEFACES: { key: PrompterFont; label: string }[] = [
   { key: 'system', label: 'SF' },
+  { key: 'lexend', label: 'Lexend' },
 ];
 
 // Auto-scroll start behavior. 'Follow system' honours the OS Reduce Motion
@@ -35,15 +36,15 @@ const AUTOSCROLL_MODES: {
   { key: 'always', label: 'Always on' },
 ];
 
-// The three prompter typefaces map onto whatever font families ship on-device.
-// Lexend/OpenDyslexic aren't bundled yet, so we approximate for the preview.
-// TODO(native-batch): register real Lexend + OpenDyslexic font assets.
+// Prompter typeface → registered font family. Lexend is the real bundled face;
+// OpenDyslexic stays a placeholder (fonts.mono) and its option is hidden until the
+// real .ttf is bundled. 'system' → undefined (the platform default face).
 function familyFor(font: PrompterFont): string | undefined {
   switch (font) {
     case 'dyslexic':
-      return fonts.mono;
+      return fonts.mono; // placeholder — option hidden until OpenDyslexic .ttf ships
     case 'lexend':
-      return fonts.display;
+      return fonts.lexend;
     default:
       return undefined;
   }

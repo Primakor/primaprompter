@@ -30,6 +30,8 @@ export const fonts = {
   // iOS ships Futura; RN falls back to the system font where unavailable.
   display: 'Futura',
   mono: 'Menlo',
+  // Real Lexend, bundled at runtime via @expo-google-fonts/lexend (loaded in App.tsx).
+  lexend: 'Lexend_600SemiBold',
 } as const;
 
 export const radius = {

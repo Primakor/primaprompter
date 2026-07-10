@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo-google-fonts/lexend": "^0.4.1",
     "@op-engineering/op-sqlite": "^17.1.2",
     "@react-navigation/native": "^7.3.8",
     "@react-navigation/native-stack": "^7.17.10",
@@ -11,6 +12,7 @@
     "expo-clipboard": "~57.0.0",
     "expo-document-picker": "~57.0.0",
     "expo-file-system": "~57.0.0",
+    "expo-font": "~57.0.0",
     "expo-media-library": "~57.0.1",
     "expo-status-bar": "~57.0.0",
     "expo-video": "~57.0.0",

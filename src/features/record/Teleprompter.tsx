@@ -105,6 +105,7 @@ export function Teleprompter({
   const textStyle = [
     styles.text,
     { fontSize: prefs.fontSize, lineHeight: prefs.fontSize * prefs.lineHeight },
+    prefs.fontFamily === 'lexend' && { fontFamily: fonts.lexend },
     prefs.fontFamily === 'dyslexic' && { fontFamily: fonts.mono },
   ];
   const cueStyle = [textStyle, styles.cue];
