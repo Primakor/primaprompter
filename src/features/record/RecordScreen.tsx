@@ -65,6 +65,8 @@ const EYELINE_MAX = 0.35;
 // (see Teleprompter styles.caret). Offsetting the container up by it makes the
 // caret land exactly on the readingLinePosition fraction of the screen height.
 const CARET_OFFSET = 14;
+// The band is user-resizable; never smaller than this (keeps ~2 lines legible).
+const BAND_MIN_H = 110;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -352,14 +354,40 @@ export function RecordScreen() {
       runOnJS(moveReadingLine)(e.absoluteY, true);
     });
 
+  // Band resize: drag the bottom handle to grow/shrink the band into the available
+  // area. Live during drag, persisted on release. maxH is passed in from render.
+  const resizeBand = useCallback(
+    (deltaY: number, maxH: number, persist: boolean) => {
+      setPrefs((p) => {
+        const next = {
+          ...p,
+          bandHeight: clamp((p.bandHeight ?? 148) + deltaY, BAND_MIN_H, maxH),
+        };
+        if (persist) setTeleprompterPrefs(next);
+        return next;
+      });
+    },
+    []
+  );
+
   const recording = mode === 'recording';
-  const bandHeight = 148;
   const body = script?.body ?? 'Open a script from the Library to read it here.';
 
   const readingFrac = clamp(prefs.readingLinePosition, EYELINE_MIN, EYELINE_MAX);
   const bandTop = readingFrac * winH - CARET_OFFSET;
   const caretY = bandTop + CARET_OFFSET; // == readingFrac * winH
+  // Resizable band: max height = the space from the band top down to the bottom
+  // controls, so it can fill the available area but never overlaps them.
+  const bandMaxH = Math.max(BAND_MIN_H, winH - bandTop - insets.bottom - 150);
+  const bandHeight = clamp(prefs.bandHeight ?? 148, BAND_MIN_H, bandMaxH);
   const railTop = bandTop + bandHeight + 16;
+  const resizePan = Gesture.Pan()
+    .onChange((e) => {
+      runOnJS(resizeBand)(e.changeY, bandMaxH, false);
+    })
+    .onEnd(() => {
+      runOnJS(resizeBand)(0, bandMaxH, true);
+    });
 
   // Permission gate (real devices). Sim has no device, so we skip straight to rehearsal.
   if (device && !camera.hasPermission) {
@@ -514,6 +542,25 @@ export function RecordScreen() {
             }}
           >
             <View style={styles.eyelineGrip} />
+          </View>
+        </GestureDetector>
+      )}
+
+      {/* band resize handle — idle only; drag to grow/shrink the band vertically */}
+      {mode === 'idle' && (
+        <GestureDetector gesture={resizePan}>
+          <View
+            style={[styles.resizeHandle, { top: bandTop + bandHeight - 11 }]}
+            hitSlop={14}
+            accessibilityRole="adjustable"
+            accessibilityLabel="Teleprompter height"
+            accessibilityValue={{ now: Math.round(bandHeight), min: BAND_MIN_H, max: Math.round(bandMaxH) }}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={(e) =>
+              resizeBand(e.nativeEvent.actionName === 'increment' ? 24 : -24, bandMaxH, true)
+            }
+          >
+            <View style={styles.resizeGrip} />
           </View>
         </GestureDetector>
       )}
@@ -705,6 +752,21 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  resizeHandle: {
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 16,
+    width: 96,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resizeGrip: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.tally,
   },
   eyelineGrip: {
     width: 30,

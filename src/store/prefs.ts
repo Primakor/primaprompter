@@ -12,6 +12,7 @@ export const DEFAULT_TELEPROMPTER_PREFS: TeleprompterPrefs = {
   fontFamily: 'system',
   highContrast: false,
   readingLinePosition: 0.18,
+  bandHeight: 148,
   mirrorText: false,
   autoScrollMode: 'system',
 };

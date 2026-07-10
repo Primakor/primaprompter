@@ -85,6 +85,8 @@ export interface TeleprompterPrefs {
   highContrast: boolean;
   /** 0..1 fraction from the top of the frame where the reading line sits. */
   readingLinePosition: number;
+  /** Height (px) of the teleprompter band; user-resizable, clamped to available area. */
+  bandHeight: number;
   mirrorText: boolean;
   /**
    * Auto-scroll start behavior when recording begins. 'system' respects the OS
