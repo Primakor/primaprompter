@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import { createScript } from '../../db/repositories/scripts';
 import { estimateDurationMs, formatDuration } from '../../lib/estimateDuration';
 import { formatRelative } from '../../lib/formatRelative';
 import { getTeleprompterPrefs } from '../../store/prefs';
+import { importTextFile, pasteText } from '../../lib/importText';
+import { Toast } from '../../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Library'>;
 
@@ -55,7 +57,15 @@ function ScriptCard({ script, onOpen }: { script: Script; onOpen: () => void }) 
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({
+  onNew,
+  onImport,
+  onPaste,
+}: {
+  onNew: () => void;
+  onImport: () => void;
+  onPaste: () => void;
+}) {
   return (
     <View style={styles.empty}>
       <View style={styles.glyph}>
@@ -75,6 +85,24 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         >
           <Text style={styles.btnPrimaryText}>＋ Write a script</Text>
         </Pressable>
+        <View style={styles.btnSecondaryRow}>
+          <Pressable
+            style={styles.btnSecondary}
+            onPress={onImport}
+            accessibilityRole="button"
+            accessibilityLabel="Import a text file"
+          >
+            <Text style={styles.btnSecondaryText}>Import .txt</Text>
+          </Pressable>
+          <Pressable
+            style={styles.btnSecondary}
+            onPress={onPaste}
+            accessibilityRole="button"
+            accessibilityLabel="Paste from clipboard"
+          >
+            <Text style={styles.btnSecondaryText}>Paste</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -93,10 +121,68 @@ export function LibraryScreen() {
     }, [refresh])
   );
 
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  const [noticeMsg, setNoticeMsg] = useState('');
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busyRef = useRef(false);
+
+  const showNotice = useCallback((msg: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNoticeMsg(msg);
+    setNoticeVisible(true);
+    noticeTimer.current = setTimeout(() => setNoticeVisible(false), 2800);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    },
+    []
+  );
+
   const handleNew = async () => {
     const s = await createScript({ title: 'Untitled script', body: '' });
     nav.navigate('Editor', { scriptId: s.id });
   };
+
+  const handleImport = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const res = await importTextFile();
+      if (res.ok) {
+        const s = await createScript({ title: res.title, body: res.body });
+        nav.navigate('Editor', { scriptId: s.id });
+      } else if (res.reason === 'too-large') {
+        showNotice('That file is too large (max 64 KB).');
+      } else if (res.reason === 'error') {
+        showNotice("Couldn't read that file.");
+      }
+      // 'canceled' → stay silent
+    } finally {
+      busyRef.current = false;
+    }
+  }, [nav, showNotice]);
+
+  const handlePaste = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const res = await pasteText();
+      if (res.ok) {
+        const s = await createScript({ title: res.title, body: res.body });
+        nav.navigate('Editor', { scriptId: s.id });
+      } else if (res.reason === 'empty') {
+        showNotice('Clipboard is empty.');
+      } else if (res.reason === 'too-large') {
+        showNotice('That text is too large (max 64 KB).');
+      } else {
+        showNotice("Couldn't read the clipboard.");
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [nav, showNotice]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -104,8 +190,26 @@ export function LibraryScreen() {
         <Text style={styles.wordmark}>
           Prima<Text style={{ color: colors.tally }}>Prompter</Text>
         </Text>
-        <View style={styles.iconBtn}>
-          <Text style={styles.iconGlyph}>⌕</Text>
+        <View style={styles.appbarActions}>
+          <Pressable
+            style={styles.iconBtn}
+            onPress={handleImport}
+            accessibilityRole="button"
+            accessibilityLabel="Import a text file"
+          >
+            <Text style={styles.iconGlyph}>⤓</Text>
+          </Pressable>
+          <Pressable
+            style={styles.iconBtn}
+            onPress={handlePaste}
+            accessibilityRole="button"
+            accessibilityLabel="Paste from clipboard"
+          >
+            <Text style={styles.iconGlyph}>⧉</Text>
+          </Pressable>
+          <View style={styles.iconBtn}>
+            <Text style={styles.iconGlyph}>⌕</Text>
+          </View>
         </View>
       </View>
 
@@ -128,7 +232,7 @@ export function LibraryScreen() {
           <ActivityIndicator color={colors.tally} />
         </View>
       ) : scripts.length === 0 ? (
-        <EmptyState onNew={handleNew} />
+        <EmptyState onNew={handleNew} onImport={handleImport} onPaste={handlePaste} />
       ) : (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
           {scripts.map((s) => (
@@ -161,6 +265,8 @@ export function LibraryScreen() {
           <Text style={styles.tabText}>Settings</Text>
         </Pressable>
       </View>
+
+      <Toast visible={noticeVisible} message={noticeMsg} />
     </View>
   );
 }
@@ -183,6 +289,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     color: colors.ink,
   },
+  appbarActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconBtn: {
     width: 36,
     height: 36,
@@ -241,6 +348,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   btnPrimaryText: { fontSize: 15, fontWeight: '700', color: colors.tallyInk },
+  btnSecondaryRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  btnSecondary: {
+    flex: 1,
+    height: 44,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paperCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnSecondaryText: { fontSize: 14, fontWeight: '600', color: colors.ink },
   fab: {
     position: 'absolute',
     right: 16,

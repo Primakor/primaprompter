@@ -86,5 +86,4 @@ export interface TeleprompterPrefs {
   /** 0..1 fraction from the top of the frame where the reading line sits. */
   readingLinePosition: number;
   mirrorText: boolean;
-  countdownSeconds: CountdownSeconds;
 }

@@ -1,6 +1,13 @@
+import { File } from 'expo-file-system';
+import type { DB } from '@op-engineering/op-sqlite';
 import { getDb } from '../client';
 import { newId } from '../../lib/id';
 import type { ID, Take } from '../../types';
+
+/** Add the file:// scheme when a bare recording path was stored on the row. */
+function toFileUri(path: string): string {
+  return path.startsWith('file://') ? path : `file://${path}`;
+}
 
 function mapTake(r: Record<string, any>): Take {
   return {
@@ -71,12 +78,21 @@ export async function getTake(id: ID): Promise<Take | null> {
 }
 
 export async function createTake(
-  input: Omit<Take, 'id' | 'createdAt' | 'isKeeper' | 'trimmedFromTakeId'> & {
+  input: Omit<
+    Take,
+    'id' | 'createdAt' | 'isKeeper' | 'trimmedFromTakeId' | 'fileSizeBytes'
+  > & {
     isKeeper?: boolean;
     trimmedFromTakeId?: ID | null;
+    /** Optional — when falsy (0/undefined) the real size is read from disk. */
+    fileSizeBytes?: number;
   }
 ): Promise<Take> {
   const now = Date.now();
+  // Prefer the caller-supplied size; otherwise measure the file on disk.
+  // new File(...).size is a synchronous getter that returns 0 if missing.
+  const fileSizeBytes =
+    input.fileSizeBytes || new File(toFileUri(input.fileUri)).size || 0;
   const take: Take = {
     id: newId(),
     scriptId: input.scriptId ?? null,
@@ -88,7 +104,7 @@ export async function createTake(
     fps: input.fps,
     codec: input.codec,
     cameraPosition: input.cameraPosition,
-    fileSizeBytes: input.fileSizeBytes,
+    fileSizeBytes,
     isKeeper: input.isKeeper ?? false,
     trimmedFromTakeId: input.trimmedFromTakeId ?? null,
     createdAt: now,
@@ -124,7 +140,40 @@ export async function setKeeper(id: ID, isKeeper: boolean): Promise<void> {
 }
 
 export async function deleteTake(id: ID): Promise<void> {
+  // Reclaim storage on explicit delete: best-effort remove the video file
+  // BEFORE the row goes away, so a deleted take doesn't strand its bytes.
+  const take = await getTake(id);
+  if (take?.fileUri) {
+    try {
+      new File(toFileUri(take.fileUri)).delete();
+    } catch {
+      // File may already be gone or unreadable — dropping the row still wins.
+    }
+  }
   await getDb().execute('DELETE FROM takes WHERE id = ?', [id]);
+}
+
+/**
+ * Shape-gated data repair (house rule): backfill the real byte size for any
+ * take row still at fileSizeBytes = 0 — e.g. rows written before size capture,
+ * or created without a size hint. Missing files stay 0. Runs from initSchema()
+ * each open; it is idempotent and only touches rows it can measure.
+ */
+export function repairTakeFileSizes(db: DB): void {
+  const res = db.executeSync(
+    'SELECT id, fileUri FROM takes WHERE fileSizeBytes = 0'
+  );
+  for (const r of res.rows) {
+    const fileUri = r.fileUri as string | null;
+    if (!fileUri) continue;
+    const size = new File(toFileUri(fileUri)).size || 0;
+    if (size > 0) {
+      db.executeSync('UPDATE takes SET fileSizeBytes = ? WHERE id = ?', [
+        size,
+        r.id,
+      ]);
+    }
+  }
 }
 
 export async function countTakes(): Promise<number> {

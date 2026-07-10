@@ -244,11 +244,11 @@ export function CaptureSettingsSheet({
 
       <ToggleRow
         label="HDR"
-        subtitle="Not available at 4K · 60 on this device"
+        subtitle="Checked per device — capability query pending"
         value={settings.hdrEnabled}
         onToggle={(v) => patch({ hdrEnabled: v })}
         disabled
-        disabledNote="unavailable"
+        disabledNote="pending"
       />
     </View>
   );

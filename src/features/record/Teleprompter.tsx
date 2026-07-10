@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -44,14 +44,18 @@ export function Teleprompter({
 }: Props) {
   const scrollY = useSharedValue(0);
   const [contentH, setContentH] = useState(0);
+  // Mirror of the scroll fraction (0..100) exposed to assistive tech.
+  const [scrubPct, setScrubPct] = useState(0);
 
   const wordCount = useMemo(() => countWords(body), [body]);
   const totalDurationMs = wordCount > 0 && wpm > 0 ? (wordCount / wpm) * 60000 : 0;
   const scrollDist = Math.max(1, contentH);
+  const lineStep = prefs.fontSize * prefs.lineHeight;
 
   useEffect(() => {
     cancelAnimation(scrollY);
     scrollY.value = 0;
+    setScrubPct(0);
   }, [resetKey, body]);
 
   useEffect(() => {
@@ -70,16 +74,33 @@ export function Teleprompter({
     transform: [{ translateY: scrollY.value }],
   }));
 
+  const reportPct = useCallback((v: number) => {
+    setScrubPct((prev) => (prev === v ? prev : v));
+  }, []);
+
   const pan = Gesture.Pan()
     .onChange((e) => {
       cancelAnimation(scrollY);
-      const next = scrollY.value + e.changeY;
-      scrollY.value = Math.min(0, Math.max(-scrollDist, next));
+      const next = Math.min(0, Math.max(-scrollDist, scrollY.value + e.changeY));
+      scrollY.value = next;
+      runOnJS(reportPct)(Math.round((-next / scrollDist) * 100));
     });
   const tap = Gesture.Tap().onEnd(() => {
     runOnJS(onTogglePlay)();
   });
   const gesture = Gesture.Exclusive(pan, tap);
+
+  // Assistive-tech scrub: nudge by a line in either direction, clamped to range.
+  const nudge = useCallback(
+    (dir: 'increment' | 'decrement') => {
+      cancelAnimation(scrollY);
+      const delta = dir === 'increment' ? -lineStep : lineStep;
+      const next = Math.min(0, Math.max(-scrollDist, scrollY.value + delta));
+      scrollY.value = next;
+      reportPct(Math.round((-next / scrollDist) * 100));
+    },
+    [lineStep, scrollDist, reportPct, scrollY]
+  );
 
   const textStyle = [
     styles.text,
@@ -96,7 +117,19 @@ export function Teleprompter({
         pointerEvents="none"
       />
       <GestureDetector gesture={gesture}>
-        <View style={styles.clip}>
+        <View
+          style={styles.clip}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={playing ? 'Pause teleprompter' : 'Play teleprompter'}
+          accessibilityHint="Toggles auto-scroll"
+          onAccessibilityTap={onTogglePlay}
+          accessibilityValue={{ now: scrubPct, min: 0, max: 100 }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(e) =>
+            nudge(e.nativeEvent.actionName === 'increment' ? 'increment' : 'decrement')
+          }
+        >
           <Animated.View
             style={[styles.content, contentStyle, prefs.mirrorText && styles.mirrored]}
             onLayout={(e) => setContentH(e.nativeEvent.layout.height)}

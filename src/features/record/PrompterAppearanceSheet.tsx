@@ -17,10 +17,11 @@ type Props = {
   onClose: () => void;
 };
 
+// Only the bundled system face is offered for now. Lexend + OpenDyslexic render
+// placeholder system fonts today, which would falsely imply real support — they
+// stay hidden until the font assets are registered (fast-follow; see familyFor).
 const TYPEFACES: { key: PrompterFont; label: string }[] = [
   { key: 'system', label: 'SF' },
-  { key: 'lexend', label: 'Lexend' },
-  { key: 'dyslexic', label: 'Dyslexic' },
 ];
 
 // The three prompter typefaces map onto whatever font families ship on-device.

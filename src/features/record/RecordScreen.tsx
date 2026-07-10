@@ -6,6 +6,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  AccessibilityInfo,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -21,10 +23,12 @@ import {
   useMicrophonePermission,
   type VideoFile,
 } from 'react-native-vision-camera';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { colors, fonts } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
 import type { CameraPosition, Script, TeleprompterPrefs } from '../../types';
-import { getScript } from '../../db/repositories/scripts';
+import { getScript, updateScript } from '../../db/repositories/scripts';
 import { createTake } from '../../db/repositories/takes';
 import {
   getTeleprompterPrefs,
@@ -42,6 +46,17 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Record'>;
 type Rt = RouteProp<RootStackParamList, 'Record'>;
 type Mode = 'idle' | 'countdown' | 'recording' | 'finalizing';
 
+// Eyeline calibration clamps: keep the reading line in a comfortable band near
+// the lens — never up into the top chrome, never past the frame's middle.
+const EYELINE_MIN = 0.08;
+const EYELINE_MAX = 0.35;
+// The band-top caret sits this many px below the band container's top edge
+// (see Teleprompter styles.caret). Offsetting the container up by it makes the
+// caret land exactly on the readingLinePosition fraction of the screen height.
+const CARET_OFFSET = 14;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
 function tc(ms: number): string {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
@@ -49,6 +64,7 @@ function tc(ms: number): string {
 
 export function RecordScreen() {
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const scriptId = route.params?.scriptId;
@@ -71,6 +87,7 @@ export function RecordScreen() {
   const cameraRef = useRef<Camera>(null);
   const startTs = useRef(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useKeepAwake(mode === 'recording' || mode === 'countdown');
 
@@ -89,12 +106,24 @@ export function RecordScreen() {
     };
   }, [scriptId]);
 
+  // Clear any live intervals if the screen unmounts mid-countdown/recording.
+  useEffect(() => {
+    return () => {
+      if (countdownTimer.current) clearInterval(countdownTimer.current);
+      if (timer.current) clearInterval(timer.current);
+    };
+  }, []);
+
   const hasCamera = !!device && camera.hasPermission;
   const canCapture = hasCamera && cameraReady;
+
+  // Per-script speed: the open script's override wins, else the global default.
+  const effectiveWpm = script?.wpmOverride ?? prefs.defaultWpm;
 
   const beginRecording = useCallback(() => {
     setMode('recording');
     setPlaying(true);
+    AccessibilityInfo.announceForAccessibility('Recording started');
     startTs.current = Date.now();
     setElapsed(0);
     timer.current = setInterval(() => setElapsed(Date.now() - startTs.current), 200);
@@ -128,29 +157,48 @@ export function RecordScreen() {
 
   const startCapture = useCallback(() => {
     setResetKey((k) => k + 1);
-    const n = prefs.countdownSeconds;
+    // countdownSeconds lives on capture settings (the prompter pref is retired).
+    const n = capture.countdownSeconds;
     if (n > 0) {
       setMode('countdown');
       setCountdown(n);
+      AccessibilityInfo.announceForAccessibility(String(n));
       let c = n;
-      const iv = setInterval(() => {
+      countdownTimer.current = setInterval(() => {
         c -= 1;
         if (c <= 0) {
-          clearInterval(iv);
+          if (countdownTimer.current) clearInterval(countdownTimer.current);
+          countdownTimer.current = null;
           setCountdown(0);
           beginRecording();
         } else {
           setCountdown(c);
+          AccessibilityInfo.announceForAccessibility(String(c));
         }
       }, 1000);
     } else {
       beginRecording();
     }
-  }, [prefs.countdownSeconds, beginRecording]);
+  }, [capture.countdownSeconds, beginRecording]);
+
+  const cancelCountdown = useCallback(() => {
+    if (countdownTimer.current) {
+      clearInterval(countdownTimer.current);
+      countdownTimer.current = null;
+    }
+    setMode('idle');
+    setPlaying(false);
+    setCountdown(0);
+  }, []);
 
   const stopCapture = useCallback(async () => {
+    if (countdownTimer.current) {
+      clearInterval(countdownTimer.current);
+      countdownTimer.current = null;
+    }
     if (timer.current) clearInterval(timer.current);
     setPlaying(false);
+    AccessibilityInfo.announceForAccessibility('Recording stopped');
     if (canCapture && cameraRef.current) {
       setMode('finalizing');
       try {
@@ -165,12 +213,22 @@ export function RecordScreen() {
     }
   }, [canCapture]);
 
-  const bumpWpm = (d: number) =>
-    setPrefs((p) => {
-      const next = { ...p, defaultWpm: Math.max(60, Math.min(260, p.defaultWpm + d)) };
-      setTeleprompterPrefs(next);
-      return next;
-    });
+  const bumpWpm = (d: number) => {
+    const next = clamp(effectiveWpm + d, 60, 260);
+    if (script) {
+      // Optimistic: reflect immediately, persist the override in the background.
+      setScript((s) => (s ? { ...s, wpmOverride: next } : s));
+      updateScript(script.id, { wpmOverride: next }).catch((e) =>
+        console.warn('[record] wpm persist failed', e)
+      );
+    } else {
+      setPrefs((p) => {
+        const np = { ...p, defaultWpm: next };
+        setTeleprompterPrefs(np);
+        return np;
+      });
+    }
+  };
 
   const applyPrefs = (p: TeleprompterPrefs) => {
     setPrefs(p);
@@ -181,9 +239,38 @@ export function RecordScreen() {
     setCaptureSettings(c);
   };
 
+  // Eyeline calibration: drag the reading line; the band + WPM rail follow it.
+  // Live in-memory during drag, persisted on release (setPrefs + store write).
+  const moveReadingLine = useCallback(
+    (absoluteY: number, persist: boolean) => {
+      setPrefs((p) => {
+        const next = {
+          ...p,
+          readingLinePosition: clamp(absoluteY / winH, EYELINE_MIN, EYELINE_MAX),
+        };
+        if (persist) setTeleprompterPrefs(next);
+        return next;
+      });
+    },
+    [winH]
+  );
+
+  const readingLinePan = Gesture.Pan()
+    .onUpdate((e) => {
+      runOnJS(moveReadingLine)(e.absoluteY, false);
+    })
+    .onEnd((e) => {
+      runOnJS(moveReadingLine)(e.absoluteY, true);
+    });
+
   const recording = mode === 'recording';
   const bandHeight = 148;
   const body = script?.body ?? 'Open a script from the Library to read it here.';
+
+  const readingFrac = clamp(prefs.readingLinePosition, EYELINE_MIN, EYELINE_MAX);
+  const bandTop = readingFrac * winH - CARET_OFFSET;
+  const caretY = bandTop + CARET_OFFSET; // == readingFrac * winH
+  const railTop = bandTop + bandHeight + 16;
 
   // Permission gate (real devices). Sim has no device, so we skip straight to rehearsal.
   if (device && !camera.hasPermission) {
@@ -251,11 +338,25 @@ export function RecordScreen() {
         )}
       </View>
 
-      {/* teleprompter band pinned high near the lens */}
-      <View style={{ marginTop: insets.top + 52 }}>
+      {/* silent-mic warning — camera on, but no audio will be captured */}
+      {hasCamera && !mic.hasPermission && (
+        <View style={[styles.micChipWrap, { top: insets.top + 52 }]} pointerEvents="box-none">
+          <Pressable
+            style={styles.micChip}
+            onPress={() => mic.requestPermission()}
+            accessibilityRole="button"
+            accessibilityLabel="Microphone is off — no sound will be recorded. Tap to enable."
+          >
+            <Text style={styles.micChipText}>⚠ No sound — mic off</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* teleprompter band, pinned to the calibrated eyeline */}
+      <View style={[styles.bandWrap, { top: bandTop }]}>
         <Teleprompter
           body={body}
-          wpm={prefs.defaultWpm}
+          wpm={effectiveWpm}
           playing={playing}
           prefs={prefs}
           height={bandHeight}
@@ -264,24 +365,53 @@ export function RecordScreen() {
         />
       </View>
 
-      {/* WPM rail (prompter control — persists while recording) */}
-      {!recording && (
-        <View style={[styles.wpm, { top: insets.top + 220 }]}>
-          <Pressable onPress={() => bumpWpm(5)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Faster">
-            <Text style={styles.wpmBtn}>＋</Text>
-          </Pressable>
-          <Text style={styles.wpmVal}>{prefs.defaultWpm}</Text>
-          <Text style={styles.wpmUnit}>WPM</Text>
-          <Pressable onPress={() => bumpWpm(-5)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Slower">
-            <Text style={styles.wpmBtn}>−</Text>
-          </Pressable>
-        </View>
+      {/* eyeline drag handle — idle only, its own gesture (never touches the band's) */}
+      {mode === 'idle' && (
+        <GestureDetector gesture={readingLinePan}>
+          <View
+            style={[styles.eyelineHandle, { top: caretY - 12 }]}
+            hitSlop={12}
+            accessibilityRole="adjustable"
+            accessibilityLabel="Reading line position"
+            accessibilityValue={{
+              now: Math.round(readingFrac * 100),
+              min: Math.round(EYELINE_MIN * 100),
+              max: Math.round(EYELINE_MAX * 100),
+            }}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={(e) => {
+              const d = e.nativeEvent.actionName === 'increment' ? 0.02 : -0.02;
+              moveReadingLine(clamp(readingFrac + d, EYELINE_MIN, EYELINE_MAX) * winH, true);
+            }}
+          >
+            <View style={styles.eyelineGrip} />
+          </View>
+        </GestureDetector>
       )}
 
+      {/* WPM rail (prompter control — always visible; dimmed while recording) */}
+      <View style={[styles.wpm, { top: railTop }, recording && styles.wpmRecording]}>
+        <Pressable onPress={() => bumpWpm(5)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Faster">
+          <Text style={styles.wpmBtn}>＋</Text>
+        </Pressable>
+        <Text style={styles.wpmVal}>{effectiveWpm}</Text>
+        <Text style={styles.wpmUnit}>WPM</Text>
+        <Pressable onPress={() => bumpWpm(-5)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Slower">
+          <Text style={styles.wpmBtn}>−</Text>
+        </Pressable>
+      </View>
+
+      {/* countdown — tap anywhere to cancel and disarm */}
       {countdown > 0 && (
-        <View style={styles.countdown} pointerEvents="none">
+        <Pressable
+          style={styles.countdown}
+          onPress={cancelCountdown}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel countdown"
+        >
           <Text style={styles.countdownNum}>{countdown}</Text>
-        </View>
+          <Text style={styles.countdownCancel}>Tap to cancel</Text>
+        </Pressable>
       )}
 
       {recording && (
@@ -298,7 +428,7 @@ export function RecordScreen() {
           </Pressable>
         ) : mode === 'finalizing' ? (
           <ActivityIndicator color="#fff" size="large" />
-        ) : (
+        ) : mode === 'countdown' ? null : (
           <>
             <Pressable style={styles.round} onPress={() => setSheet('prompter')} accessibilityRole="button" accessibilityLabel="Prompter appearance">
               <Text style={styles.roundGlyph}>Aa</Text>
@@ -380,6 +510,46 @@ const styles = StyleSheet.create({
   },
   recDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.rec },
   recText: { fontFamily: fonts.mono, fontSize: 13, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
+  micChipWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 21,
+    alignItems: 'center',
+  },
+  micChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.tally,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  micChipText: { color: colors.tallyInk, fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
+  bandWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  eyelineHandle: {
+    position: 'absolute',
+    left: 2,
+    zIndex: 15,
+    width: 44,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eyelineGrip: {
+    width: 30,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.tally,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.35)',
+  },
   wpm: {
     position: 'absolute',
     right: 12,
@@ -391,6 +561,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
   },
+  wpmRecording: { opacity: 0.5 },
   wpmBtn: { color: '#fff', fontSize: 20, fontWeight: '700' },
   wpmVal: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.tally },
   wpmUnit: { color: 'rgba(255,255,255,0.5)', fontSize: 8, letterSpacing: 1 },
@@ -402,6 +573,15 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 12,
     textShadowOffset: { width: 0, height: 2 },
+  },
+  countdownCancel: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: fonts.mono,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 6,
   },
   hint: {
     position: 'absolute',

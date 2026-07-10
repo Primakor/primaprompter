@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  Linking,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   useNavigation,
@@ -11,19 +18,16 @@ import { colors, fonts, radius } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Take } from '../../types';
 import { getTake, deleteTake, setKeeper } from '../../db/repositories/takes';
+import { VideoTransport } from '../../components/VideoTransport';
+import { Toast } from '../../components/Toast';
+import { saveTakeToPhotos } from '../../lib/saveToPhotos';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Review'>;
 type Rt = RouteProp<RootStackParamList, 'Review'>;
 
-// TODO(native-batch): real video playback (expo-video / react-native-video).
-// Review currently shows a static poster + a non-functional transport.
-
-/** "0:07" style timecode for the scrubber ends. */
-function formatTimecode(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+/** Prefix a bare filesystem path with file:// so native APIs get a URI. */
+function toFileUri(path: string): string {
+  return /^\w+:\/\//.test(path) ? path : `file://${path}`;
 }
 
 function formatSize(bytes: number): string {
@@ -47,9 +51,20 @@ export function ReviewScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const takeId = route.params.takeId;
+  const offerDeleteOriginalId = route.params.offerDeleteOriginalId;
 
   const [take, setTake] = useState<Take | null>(null);
   const [loading, setLoading] = useState(true);
+  // One-time "delete the original?" banner shown after a trim produced this take.
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Local, self-dismissing toast (Save-to-Photos feedback). No global state.
+  const [toast, setToast] = useState<{
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -65,6 +80,24 @@ export function ReviewScreen() {
     };
   }, [takeId]);
 
+  // Clear any pending toast timer on unmount.
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    []
+  );
+
+  const showToast = (next: {
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(next);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  };
+
   const handleTrim = () => nav.navigate('Trim', { takeId });
 
   const handleDiscard = async () => {
@@ -79,6 +112,27 @@ export function ReviewScreen() {
   const handleKeep = async () => {
     await setKeeper(takeId, true);
     nav.goBack();
+  };
+
+  const handleSave = async () => {
+    if (!take) return;
+    const result = await saveTakeToPhotos(take.fileUri);
+    if (result === 'saved') {
+      showToast({ message: 'Saved to Photos' });
+    } else if (result === 'denied') {
+      showToast({
+        message: 'Photos access needed',
+        actionLabel: 'Settings',
+        onAction: () => Linking.openSettings(),
+      });
+    } else {
+      showToast({ message: "Couldn't save" });
+    }
+  };
+
+  const handleDeleteOriginal = async () => {
+    if (offerDeleteOriginalId) await deleteTake(offerDeleteOriginalId);
+    setBannerDismissed(true);
   };
 
   if (loading) {
@@ -111,6 +165,7 @@ export function ReviewScreen() {
   const badge = `${resolutionLabel(take.width, take.height)} · ${take.fps}fps · ${formatSize(
     take.fileSizeBytes
   )}`;
+  const showDeleteBanner = !!offerDeleteOriginalId && !bannerDismissed;
 
   return (
     <View style={styles.root}>
@@ -135,31 +190,46 @@ export function ReviewScreen() {
         </Pressable>
       </View>
 
-      {/* Video stage */}
-      <View style={styles.stage}>
-        <View style={styles.videoPlaceholder}>
-          <Pressable
-            style={styles.playBtn}
-            onPress={() => {
-              /* TODO(native-batch): toggle playback */
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Play take"
-          >
-            <Text style={styles.playGlyph}>▶</Text>
-          </Pressable>
+      {/* Delete-original banner (offered after a Trim produced this take) */}
+      {showDeleteBanner ? (
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>Delete the original take?</Text>
+          <View style={styles.bannerBtns}>
+            <Pressable
+              style={styles.bannerDismiss}
+              onPress={() => setBannerDismissed(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+            >
+              <Text style={styles.bannerDismissText}>Dismiss</Text>
+            </Pressable>
+            <Pressable
+              style={styles.bannerDelete}
+              onPress={handleDeleteOriginal}
+              accessibilityRole="button"
+              accessibilityLabel="Delete original take"
+            >
+              <Text style={styles.bannerDeleteText}>Delete</Text>
+            </Pressable>
+          </View>
         </View>
+      ) : null}
+
+      {/* Video stage — custom transport (playback + scrubber) */}
+      <View style={styles.stage}>
+        <VideoTransport uri={toFileUri(take.fileUri)} />
       </View>
 
-      {/* Scrubber */}
-      <View style={styles.scrubWrap}>
-        <Text style={styles.tc}>{formatTimecode(0)}</Text>
-        <View style={styles.track} accessibilityRole="adjustable" accessibilityLabel="Playback position">
-          <View style={styles.trackFill} />
-          <View style={styles.knob} />
-        </View>
-        <Text style={styles.tc}>{formatTimecode(take.durationMs)}</Text>
-      </View>
+      {/* Save to Photos — export a raw copy, separate from the Keep decision */}
+      <Pressable
+        style={styles.saveBtn}
+        onPress={handleSave}
+        accessibilityRole="button"
+        accessibilityLabel="Save to Photos"
+      >
+        <Text style={styles.saveGlyph}>↓</Text>
+        <Text style={styles.saveText}>Save to Photos</Text>
+      </Pressable>
 
       {/* Bottom action row */}
       <View style={[styles.actions, { paddingBottom: insets.bottom || 14 }]}>
@@ -193,6 +263,13 @@ export function ReviewScreen() {
           <Text style={[styles.actionText, styles.keepTint]}>Keep</Text>
         </Pressable>
       </View>
+
+      <Toast
+        visible={!!toast}
+        message={toast?.message ?? ''}
+        actionLabel={toast?.actionLabel}
+        onAction={toast?.onAction}
+      />
     </View>
   );
 }
@@ -248,60 +325,61 @@ const styles = StyleSheet.create({
   scissorGlyph: { fontSize: 18, color: '#EDEBE6' },
 
   stage: { flex: 1, paddingHorizontal: 16, paddingBottom: 8 },
-  videoPlaceholder: {
-    flex: 1,
+
+  banner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: radius.card,
-    backgroundColor: '#0B0C0F',
+    backgroundColor: colors.stage2,
+    borderWidth: 1,
+    borderColor: colors.camLine,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  bannerText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#EDEBE6' },
+  bannerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bannerDismiss: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: colors.stage,
     borderWidth: 1,
     borderColor: colors.camLine,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  playBtn: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: 'rgba(20,22,26,0.55)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(237,235,230,0.6)',
+  bannerDismissText: { fontSize: 12, fontWeight: '700', color: 'rgba(237,235,230,0.75)' },
+  bannerDelete: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,59,48,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,59,48,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playGlyph: { fontSize: 34, color: '#EDEBE6', marginLeft: 5 },
+  bannerDeleteText: { fontSize: 12, fontWeight: '700', color: colors.rec },
 
-  scrubWrap: {
+  saveBtn: {
+    marginHorizontal: 16,
+    marginTop: 2,
+    height: 46,
+    borderRadius: radius.card,
+    backgroundColor: colors.stage2,
+    borderWidth: 1,
+    borderColor: colors.camLine,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-  },
-  tc: { fontFamily: fonts.mono, fontSize: 12, color: colors.inkMuted, minWidth: 34 },
-  track: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.camLine,
     justifyContent: 'center',
+    gap: 8,
   },
-  trackFill: {
-    position: 'absolute',
-    left: 0,
-    width: '0%',
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.tally,
-  },
-  knob: {
-    position: 'absolute',
-    left: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginLeft: -1,
-    backgroundColor: colors.tally,
-  },
+  saveGlyph: { fontSize: 17, fontWeight: '700', color: colors.tally },
+  saveText: { fontSize: 13, fontWeight: '700', color: '#EDEBE6' },
 
   actions: {
     flexDirection: 'row',

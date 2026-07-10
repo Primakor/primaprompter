@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -20,6 +21,8 @@ import {
 } from '../../db/repositories/takes';
 import { formatDuration } from '../../lib/estimateDuration';
 import { formatBytes, getFreeDiskBytes } from '../../lib/storage';
+import { saveTakeToPhotos } from '../../lib/saveToPhotos';
+import { Toast } from '../../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Gallery'>;
 
@@ -44,7 +47,17 @@ function resLabel(take: Take): string {
   return `${Math.min(take.width, take.height)}·${take.fps}`;
 }
 
-function TakeCard({ take, onOpen }: { take: Take; onOpen: () => void }) {
+function TakeCard({
+  take,
+  onOpen,
+  onSave,
+  saving,
+}: {
+  take: Take;
+  onOpen: () => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
   return (
     <Pressable
       onPress={onOpen}
@@ -76,6 +89,21 @@ function TakeCard({ take, onOpen }: { take: Take; onOpen: () => void }) {
         <View style={styles.durBadge}>
           <Text style={styles.durText}>{formatDuration(take.durationMs)}</Text>
         </View>
+
+        <Pressable
+          onPress={onSave}
+          disabled={saving}
+          hitSlop={8}
+          style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Save to Photos"
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#F3F1EB" />
+          ) : (
+            <Text style={styles.saveGlyph}>⤓</Text>
+          )}
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -84,9 +112,13 @@ function TakeCard({ take, onOpen }: { take: Take; onOpen: () => void }) {
 function Group({
   group,
   onOpenTake,
+  onSaveTake,
+  savingId,
 }: {
   group: TakeGroup;
   onOpenTake: (take: Take) => void;
+  onSaveTake: (take: Take) => void;
+  savingId: string | null;
 }) {
   return (
     <View style={styles.group}>
@@ -99,7 +131,13 @@ function Group({
       </Text>
       <View style={styles.grid}>
         {group.takes.map((t) => (
-          <TakeCard key={t.id} take={t} onOpen={() => onOpenTake(t)} />
+          <TakeCard
+            key={t.id}
+            take={t}
+            onOpen={() => onOpenTake(t)}
+            onSave={() => onSaveTake(t)}
+            saving={savingId === t.id}
+          />
         ))}
       </View>
     </View>
@@ -123,6 +161,59 @@ export function GalleryScreen() {
   const nav = useNavigation<Nav>();
   const [groups, setGroups] = useState<TakeGroup[] | null>(null);
   const [freeBytes, setFreeBytes] = useState<number | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const [toastAction, setToastAction] = useState<{
+    label: string;
+    onAction: () => void;
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+
+  const showToast = useCallback(
+    (message: string, action?: { label: string; onAction: () => void }) => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      setToastMsg(message);
+      setToastAction(action ?? null);
+      setToastVisible(true);
+      toastTimer.current = setTimeout(() => setToastVisible(false), 3200);
+    },
+    []
+  );
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    []
+  );
+
+  const handleSaveTake = useCallback(
+    async (take: Take) => {
+      if (savingRef.current) return;
+      savingRef.current = true;
+      setSavingId(take.id);
+      try {
+        const result = await saveTakeToPhotos(take.fileUri);
+        if (result === 'saved') {
+          showToast('Saved to Photos');
+        } else if (result === 'denied') {
+          showToast('Photos access needed', {
+            label: 'Settings',
+            onAction: () => Linking.openSettings().catch(() => {}),
+          });
+        } else {
+          showToast("Couldn't save");
+        }
+      } finally {
+        savingRef.current = false;
+        setSavingId(null);
+      }
+    },
+    [showToast]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -187,6 +278,8 @@ export function GalleryScreen() {
               key={g.scriptId ?? '__unlinked__'}
               group={g}
               onOpenTake={(t) => nav.navigate('Review', { takeId: t.id })}
+              onSaveTake={handleSaveTake}
+              savingId={savingId}
             />
           ))}
         </ScrollView>
@@ -203,6 +296,13 @@ export function GalleryScreen() {
           )}
         </View>
       )}
+
+      <Toast
+        visible={toastVisible}
+        message={toastMsg}
+        actionLabel={toastAction?.label}
+        onAction={toastAction?.onAction}
+      />
     </View>
   );
 }
@@ -334,6 +434,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#F3F1EB',
+  },
+
+  saveBtn: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnPressed: { opacity: 0.6 },
+  saveGlyph: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#F3F1EB',
+    marginTop: -1,
   },
 
   empty: {

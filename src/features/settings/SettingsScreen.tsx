@@ -8,6 +8,7 @@ import {
   Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMicrophonePermission } from 'react-native-vision-camera';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, fonts, radius } from '../../theme/tokens';
@@ -117,6 +118,7 @@ function Toggle({
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
+  const mic = useMicrophonePermission();
 
   const [freeBytes, setFreeBytes] = useState<number | null>(null);
   const [capture, setCapture] = useState<CaptureSettings | null>(null);
@@ -144,6 +146,15 @@ export function SettingsScreen() {
     // TODO(native-batch): confirm canOpenURL / in-app browser policy.
     Linking.openURL(SOURCE_URL).catch(() => {});
   }, []);
+
+  const onEnableMic = useCallback(async () => {
+    // requestPermission() only shows the OS dialog while the status is
+    // not-determined. Once the user has decided, it resolves false without a
+    // prompt — so when the mic is already determined, deep-link to Settings.
+    // AppState refresh in the hook flips this row to "On" when they return.
+    const granted = await mic.requestPermission();
+    if (!granted) Linking.openSettings().catch(() => {});
+  }, [mic]);
 
   const storageSubtitle =
     freeBytes === null
@@ -184,6 +195,21 @@ export function SettingsScreen() {
             onPress={() => nav.navigate('Record')}
             showChevron
             accessibilityLabel={`Default capture. ${captureSubtitle}`}
+          />
+        </Group>
+
+        <Group title="Permissions">
+          <Row
+            label="Microphone"
+            subtitle={mic.hasPermission ? undefined : 'Off · tap to enable'}
+            value={mic.hasPermission ? 'On' : undefined}
+            onPress={mic.hasPermission ? undefined : onEnableMic}
+            showChevron={!mic.hasPermission}
+            accessibilityLabel={
+              mic.hasPermission
+                ? 'Microphone access on'
+                : 'Microphone access off. Tap to enable.'
+            }
           />
         </Group>
 

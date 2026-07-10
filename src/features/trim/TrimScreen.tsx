@@ -23,7 +23,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { colors, fonts, radius } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Take } from '../../types';
-import { getTake } from '../../db/repositories/takes';
+import { getTake, createTake } from '../../db/repositories/takes';
+import { trimVideo } from '../../lib/trimVideo';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Trim'>;
 type Rt = RouteProp<RootStackParamList, 'Trim'>;
@@ -31,6 +32,7 @@ type Rt = RouteProp<RootStackParamList, 'Trim'>;
 const HANDLE_W = 26; // px — touch target padded to >=44 via hitSlop
 const FRAME_COUNT = 8;
 const MIN_GAP = 0.06; // keep at least ~6% of the clip selected
+const A11Y_STEP = 0.02; // ~2% nudge per accessibility increment/decrement
 const FALLBACK_DURATION_MS = 12_000;
 
 // Filmstrip stand-in: 8 tonal frames that read as footage without a real
@@ -54,6 +56,7 @@ export function TrimScreen() {
 
   const [take, setTake] = useState<Take | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [trackW, setTrackW] = useState(0);
 
   // Selection as 0..1 fractions of the clip. Shared values drive the handle /
@@ -122,16 +125,50 @@ export function TrimScreen() {
   const outMs = outFrac * durationMs;
   const selectedMs = Math.max(0, outMs - inMs);
 
-  const handleSave = () => {
-    // TODO(native-batch): create a non-destructive trimmed take from
-    // [inFrac, outFrac] via passthrough (no re-encode), link trimmedFromTakeId,
-    // then navigate to Review. For now just dismiss.
-    nav.goBack();
+  // Accessibility nudges. These handlers run on the JS thread (not a worklet),
+  // so writing the shared value directly is safe — no runOnJS needed here.
+  // Both are clamped by the same MIN_GAP the pan gestures use.
+  const nudgeIn = (delta: number) => {
+    const next = Math.max(0, Math.min(outSV.value - MIN_GAP, inSV.value + delta));
+    inSV.value = next;
+    setInFrac(next);
+  };
+  const nudgeOut = (delta: number) => {
+    const next = Math.min(1, Math.max(inSV.value + MIN_GAP, outSV.value + delta));
+    outSV.value = next;
+    setOutFrac(next);
   };
 
-  const handleSaveToPhotos = () => {
-    // TODO(native-batch): export the trimmed passthrough clip to the Photos
-    // library (requires add-only Photos permission). No-op stub for now.
+  const handleSaveTrim = async () => {
+    if (!take || saving) return;
+    setSaving(true);
+    try {
+      const inSec = (inFrac * durationMs) / 1000;
+      const outSec = (outFrac * durationMs) / 1000;
+      // Non-destructive: produces a NEW file; the original take is untouched.
+      const newUri = await trimVideo(take.fileUri, inSec, outSec);
+      const newTake = await createTake({
+        scriptId: take.scriptId,
+        fileUri: newUri,
+        thumbnailUri: null,
+        durationMs: Math.round((outSec - inSec) * 1000),
+        width: take.width,
+        height: take.height,
+        fps: take.fps,
+        codec: take.codec,
+        cameraPosition: take.cameraPosition,
+        trimmedFromTakeId: take.id,
+      });
+      // Review offers to delete the original once the trim is confirmed.
+      nav.replace('Review', {
+        takeId: newTake.id,
+        offerDeleteOriginalId: take.id,
+      });
+    } catch {
+      // TODO(native-batch): surface a trim-failed alert. Re-enable the CTA so
+      // the user can retry.
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -156,15 +193,8 @@ export function TrimScreen() {
           <Text style={styles.appbarClose}>✕</Text>
         </Pressable>
         <Text style={styles.appbarTitle}>Trim</Text>
-        <Pressable
-          onPress={handleSave}
-          hitSlop={12}
-          style={[styles.appbarBtn, styles.saveBtn]}
-          accessibilityRole="button"
-          accessibilityLabel="Save trim"
-        >
-          <Text style={styles.saveText}>Save</Text>
-        </Pressable>
+        {/* Spacer keeps the title centered; the only top action is ✕. */}
+        <View style={styles.appbarBtn} />
       </View>
 
       {/* Video placeholder */}
@@ -211,9 +241,21 @@ export function TrimScreen() {
             <Animated.View
               style={[styles.handle, styles.handleIn, inHandleStyle]}
               hitSlop={{ left: 14, right: 14, top: 14, bottom: 14 }}
+              accessible={true}
               accessibilityRole="adjustable"
               accessibilityLabel="Trim start handle"
               accessibilityValue={{ text: formatTimecode(inMs) }}
+              accessibilityActions={[
+                { name: 'increment' },
+                { name: 'decrement' },
+              ]}
+              onAccessibilityAction={(e) =>
+                nudgeIn(
+                  e.nativeEvent.actionName === 'decrement'
+                    ? -A11Y_STEP
+                    : A11Y_STEP
+                )
+              }
             >
               <View style={styles.handleGrip} />
             </Animated.View>
@@ -224,9 +266,21 @@ export function TrimScreen() {
             <Animated.View
               style={[styles.handle, styles.handleOut, outHandleStyle]}
               hitSlop={{ left: 14, right: 14, top: 14, bottom: 14 }}
+              accessible={true}
               accessibilityRole="adjustable"
               accessibilityLabel="Trim end handle"
               accessibilityValue={{ text: formatTimecode(outMs) }}
+              accessibilityActions={[
+                { name: 'increment' },
+                { name: 'decrement' },
+              ]}
+              onAccessibilityAction={(e) =>
+                nudgeOut(
+                  e.nativeEvent.actionName === 'decrement'
+                    ? -A11Y_STEP
+                    : A11Y_STEP
+                )
+              }
             >
               <View style={styles.handleGrip} />
             </Animated.View>
@@ -246,12 +300,17 @@ export function TrimScreen() {
       {/* Bottom primary */}
       <View style={[styles.footer, { paddingBottom: insets.bottom || 14 }]}>
         <Pressable
-          style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
-          onPress={handleSaveToPhotos}
+          style={({ pressed }) => [
+            styles.primary,
+            (pressed || saving) && styles.primaryPressed,
+          ]}
+          onPress={handleSaveTrim}
+          disabled={saving}
           accessibilityRole="button"
-          accessibilityLabel="Save trimmed clip to Photos"
+          accessibilityLabel="Save trim"
+          accessibilityState={{ disabled: saving, busy: saving }}
         >
-          <Text style={styles.primaryText}>Save to Photos</Text>
+          <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Save trim'}</Text>
         </Pressable>
       </View>
     </View>
@@ -283,9 +342,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     color: '#FFFFFF',
   },
-  saveBtn: { alignItems: 'flex-end' },
-  saveText: { fontSize: 15, fontWeight: '700', color: colors.tally },
-
   stageWrap: { paddingHorizontal: 16 },
   video: {
     aspectRatio: 9 / 16,

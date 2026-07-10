@@ -22,6 +22,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import { getScript, updateScript } from '../../db/repositories/scripts';
 import { countWords, estimateDurationMs, formatDuration } from '../../lib/estimateDuration';
 import { getTeleprompterPrefs } from '../../store/prefs';
+import { pasteText } from '../../lib/importText';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Editor'>;
 type Rt = RouteProp<RootStackParamList, 'Editor'>;
@@ -97,6 +98,17 @@ export function EditorScreen() {
     scheduleSave(title, next);
   };
 
+  const handlePaste = async () => {
+    const res = await pasteText();
+    if (!res.ok) return; // empty / too-large / error → keep minimal, no-op
+    const next =
+      body.length === 0
+        ? res.body
+        : `${body}${body.endsWith('\n') ? '' : '\n\n'}${res.body}`;
+    setBody(next);
+    scheduleSave(title, next);
+  };
+
   const words = countWords(body);
   const wpm = getTeleprompterPrefs().defaultWpm;
   const dur = formatDuration(estimateDurationMs(words, wpm));
@@ -125,6 +137,7 @@ export function EditorScreen() {
           placeholderTextColor={colors.inkMuted}
           style={styles.title}
           numberOfLines={1}
+          accessibilityLabel="Script title"
         />
         <Pressable onPress={flushAndBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
           <Text style={styles.done}>Done</Text>
@@ -142,6 +155,7 @@ export function EditorScreen() {
           multiline
           textAlignVertical="top"
           autoFocus={!body}
+          accessibilityLabel="Script body"
         />
       </ScrollView>
 
@@ -149,7 +163,10 @@ export function EditorScreen() {
         <Pressable style={styles.cueBtn} onPress={() => insertCue('[pause]')} accessibilityRole="button" accessibilityLabel="Insert pause cue">
           <Text style={styles.cueBtnText}>＋ cue</Text>
         </Pressable>
-        <Text style={styles.stat}>
+        <Pressable style={styles.pasteBtn} onPress={handlePaste} accessibilityRole="button" accessibilityLabel="Paste from clipboard">
+          <Text style={styles.pasteBtnText}>Paste</Text>
+        </Pressable>
+        <Text style={styles.stat} numberOfLines={1}>
           {words} words · <Text style={styles.statAccent}>≈ {dur}</Text>
         </Text>
         <View style={styles.spacer} />
@@ -211,7 +228,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cueBtnText: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '600', color: '#0e5c70' },
-  stat: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMuted },
+  pasteBtn: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pasteBtnText: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '600', color: colors.inkMuted },
+  stat: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMuted, flexShrink: 1 },
   statAccent: { color: colors.tally },
   spacer: { flex: 1 },
   primary: {

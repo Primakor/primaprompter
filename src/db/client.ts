@@ -1,4 +1,5 @@
 import { open, type DB } from '@op-engineering/op-sqlite';
+import { repairTakeFileSizes } from './repositories/takes';
 
 let _db: DB | null = null;
 
@@ -61,4 +62,7 @@ function initSchema(db: DB) {
 
   db.executeSync(`CREATE INDEX IF NOT EXISTS idx_scripts_folder ON scripts(folderId);`);
   db.executeSync(`CREATE INDEX IF NOT EXISTS idx_takes_script ON takes(scriptId);`);
+
+  // Shape-gated data repairs (house rule): run after the tables exist.
+  repairTakeFileSizes(db);
 }
