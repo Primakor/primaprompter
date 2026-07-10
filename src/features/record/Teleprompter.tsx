@@ -6,6 +6,7 @@ import Animated, {
   withTiming,
   cancelAnimation,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { colors, fonts } from '../../theme/tokens';
@@ -76,8 +77,7 @@ export function Teleprompter({
       scrollY.value = Math.min(0, Math.max(-scrollDist, next));
     });
   const tap = Gesture.Tap().onEnd(() => {
-    'worklet';
-    onTogglePlay();
+    runOnJS(onTogglePlay)();
   });
   const gesture = Gesture.Exclusive(pan, tap);
 
