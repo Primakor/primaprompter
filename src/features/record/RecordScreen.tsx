@@ -65,6 +65,7 @@ export function RecordScreen() {
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [resetKey, setResetKey] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
   const [sheet, setSheet] = useState<null | 'capture' | 'prompter'>(null);
 
   const cameraRef = useRef<Camera>(null);
@@ -88,7 +89,8 @@ export function RecordScreen() {
     };
   }, [scriptId]);
 
-  const canCapture = !!device && camera.hasPermission;
+  const hasCamera = !!device && camera.hasPermission;
+  const canCapture = hasCamera && cameraReady;
 
   const beginRecording = useCallback(() => {
     setMode('recording');
@@ -200,14 +202,19 @@ export function RecordScreen() {
   return (
     <View style={styles.root}>
       {/* Preview: real camera on device, graceful backdrop in the simulator */}
-      {canCapture ? (
+      {hasCamera ? (
         <Camera
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           device={device!}
           isActive={mode !== 'finalizing'}
           video={true}
-          audio={true}
+          audio={mic.hasPermission}
+          onInitialized={() => setCameraReady(true)}
+          onError={(e) => {
+            console.warn('[camera]', e.message);
+            setCameraReady(false);
+          }}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.noCam]}>
