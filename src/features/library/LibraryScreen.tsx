@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,18 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, fonts, radius } from '../../theme/tokens';
+import type { RootStackParamList } from '../../navigation/types';
 import type { Script } from '../../types';
 import { useScripts } from './useScripts';
 import { createScript } from '../../db/repositories/scripts';
 import { estimateDurationMs, formatDuration } from '../../lib/estimateDuration';
 import { formatRelative } from '../../lib/formatRelative';
 import { getTeleprompterPrefs } from '../../store/prefs';
+
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Library'>;
 
 const FOLDERS = ['All', 'Reels', 'Client work', 'Personal'];
 const CUE_TAG_RE = /\[[^\]]*\]/g;
@@ -23,11 +28,12 @@ function preview(body: string): string {
   return body.replace(CUE_TAG_RE, '').replace(/\s+/g, ' ').trim();
 }
 
-function ScriptCard({ script }: { script: Script }) {
+function ScriptCard({ script, onOpen }: { script: Script; onOpen: () => void }) {
   const wpm = script.wpmOverride ?? getTeleprompterPrefs().defaultWpm;
   const dur = formatDuration(estimateDurationMs(script.wordCount, wpm));
   return (
     <Pressable
+      onPress={onOpen}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       accessibilityRole="button"
       accessibilityLabel={`Script: ${script.title}, ${script.wordCount} words, about ${dur}`}
@@ -76,12 +82,20 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 
 export function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const nav = useNavigation<Nav>();
   const [query] = useState('');
   const { scripts, refresh } = useScripts(query);
 
+  // Refresh when returning from the Editor so edits/new scripts show up.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
   const handleNew = async () => {
-    await createScript({ title: 'Untitled script', body: '' });
-    await refresh();
+    const s = await createScript({ title: 'Untitled script', body: '' });
+    nav.navigate('Editor', { scriptId: s.id });
   };
 
   return (
@@ -118,7 +132,11 @@ export function LibraryScreen() {
       ) : (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
           {scripts.map((s) => (
-            <ScriptCard key={s.id} script={s} />
+            <ScriptCard
+              key={s.id}
+              script={s}
+              onOpen={() => nav.navigate('Editor', { scriptId: s.id })}
+            />
           ))}
         </ScrollView>
       )}
@@ -139,9 +157,9 @@ export function LibraryScreen() {
         <View style={styles.tab}>
           <Text style={[styles.tabText, styles.tabOn]}>Library</Text>
         </View>
-        <View style={styles.tab}>
+        <Pressable style={styles.tab} onPress={() => nav.navigate('Settings')}>
           <Text style={styles.tabText}>Settings</Text>
-        </View>
+        </Pressable>
       </View>
     </View>
   );
@@ -213,12 +231,7 @@ const styles = StyleSheet.create({
   },
   glyphMark: { fontSize: 44, color: colors.tally, fontWeight: '700' },
   emptyTitle: { fontSize: 19, fontWeight: '700', color: colors.ink, marginBottom: 8 },
-  emptyBody: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: colors.inkMuted,
-    textAlign: 'center',
-  },
+  emptyBody: { fontSize: 13, lineHeight: 20, color: colors.inkMuted, textAlign: 'center' },
   btnRow: { marginTop: 20, width: '100%' },
   btnPrimary: {
     height: 46,
