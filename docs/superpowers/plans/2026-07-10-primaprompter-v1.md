@@ -33,7 +33,7 @@ Copied verbatim from the spec — every task's requirements implicitly include t
 
 ```
 primaprompter/
-  app.config.ts                # Expo config + vision-camera config plugin
+  app.json                # Expo config + vision-camera config plugin
   package.json  tsconfig.json  .eslintrc  jest.config.js
   LICENSE  README.md  CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md
   .github/workflows/ci.yml     # typecheck + lint + test (no secrets)
@@ -60,17 +60,17 @@ Files that change together live together (feature folders own their screen + hoo
 **Deliverable:** an Expo dev-build app that opens a live `react-native-vision-camera` preview on a real iOS and Android device. Proves the toolchain before any feature work. This *is* the base the spike runs in.
 
 ### Task 0.1: Initialize the project
-**Files:** Create repo root (`package.json`, `app.config.ts`, `tsconfig.json`, `.gitignore`).
+**Files:** Create repo root (`package.json`, `app.json`, `tsconfig.json`, `.gitignore`).
 - [ ] **Step 1:** Use **Node 22 LTS** (`nvm use 22`; Node 25 is non-LTS + unsupported by Expo). The repo already contains `docs/` + git history, so `create-expo-app .` will balk — scaffold into a temp dir and merge: `npx create-expo-app@latest /tmp/pp-scaffold --template blank-typescript`, then `rsync -a --exclude='.git' /tmp/pp-scaffold/ ~/Projects/Primakor/primaprompter/` (preserves `docs/` + `.git`).
 - [ ] **Step 2:** Add `expo-dev-client`: `npx expo install expo-dev-client`
 - [ ] **Step 3:** Verify `.gitignore` excludes `node_modules/`, `ios/` + `android/` build artifacts, `.env`, keystores, provisioning profiles. Expected: signing material can never enter the public repo.
 - [ ] **Step 4:** Commit — `git add -A && git commit -m "chore: bootstrap Expo dev-build project"`
 
 ### Task 0.2: Install the capture + motion stack
-**Files:** `package.json`, `app.config.ts`, `babel.config.js`
+**Files:** `package.json`, `app.json`, `babel.config.js`
 - [ ] **Step 1:** `npx expo install react-native-vision-camera react-native-reanimated react-native-gesture-handler @react-navigation/native @react-navigation/native-stack react-native-safe-area-context react-native-screens`
 - [ ] **Step 2:** `npm i @op-engineering/op-sqlite react-native-mmkv`
-- [ ] **Step 3:** Add the vision-camera config plugin + camera/mic permission strings to `app.config.ts` (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, Android `CAMERA`/`RECORD_AUDIO`), copying the privacy-forward strings from the spec.
+- [ ] **Step 3:** Add the vision-camera config plugin + camera/mic permission strings to `app.json` (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, Android `CAMERA`/`RECORD_AUDIO`), copying the privacy-forward strings from the spec.
 - [ ] **Step 4:** Add the Reanimated Babel plugin to `babel.config.js`.
 - [ ] **Step 5:** `npx expo prebuild` to generate `ios/` + `android/`.
 - [ ] **Step 6:** Commit — `git commit -am "chore: add capture + motion + persistence deps and config plugin"`
@@ -92,13 +92,13 @@ Files that change together live together (feature folders own their screen + hoo
 - [ ] **1.1 UI-thread scroll under encode (+ thermal):** overlay a Reanimated-driven scrolling band; start a 4K/60 recording (where supported); measure dropped frames on the low-end Android. Run one **long 4K record** here for best-effort thermal observation. **Gates:** the UI-thread-scroll mandate (fail → cap fps or revisit). Record fps + smoothness + any thermal throttle.
 - [ ] **1.2 Format query + gating matrix (PER LENS):** enumerate `device.formats` for **both front and back** — front is the default and usually weaker, so a back-only matrix misgates the majority path. Build the offered resolution/fps/codec/HDR/stabilization set; confirm **H.264+HDR is correctly excluded** and cinematic-stabilization is iOS-only. **Gates:** Capture Settings gating logic (P5's core input; fail → widen/narrow the offered set). Record the matrix per lens per device.
 - [ ] **1.3 Interruption-finalize (+ error taxonomy):** during recording trigger incoming call, backgrounding, simulated storage-full, and a **BT-mic route change mid-take** (min bar: no crash, take survives); confirm each finalizes to a playable take. Document the SDK's interruption/error taxonomy — thermal shutdown shares this finalize-on-error path. **Gates:** never-lose-a-take (fail → the app's most unforgivable bug; block build until solved). Record behavior per trigger.
-- [ ] **1.4 Passthrough trim (timeboxed probe → estimate):** timebox the **probe** to ~1 day; probe single-clip in/out trim with no re-encode + the one re-encode fallback, on **Android AND a 30-min iOS clip** (ships on both). Output is an implementation **estimate**, judged against the ~3–4 dev-day drop threshold (probe-timebox ≠ impl-estimate). **Gates:** Trim-Lite in v1 vs auto-drop to v1.1. Record feasibility + effort estimate per platform.
+- [ ] **1.4 Passthrough trim (timeboxed probe → estimate):** timebox the **probe** to ~1 day; probe single-clip in/out trim with no re-encode + the one re-encode fallback, on **Android** + a quick **iOS sanity pass (~30 min of effort)** (ships on both). Output is an implementation **estimate**, judged against the ~3–4 dev-day drop threshold (probe-timebox ≠ impl-estimate). **Gates:** Trim-Lite in v1 vs auto-drop to v1.1. Record feasibility + effort estimate per platform.
 - [ ] **1.5 Record-time mirroring:** confirm whether the SDK can write a horizontally-mirrored file at record time (no re-encode). **Gates:** flip-saved-video in v1 (P5) vs v2. Record support per platform.
 - [ ] **1.6 iOS volume-button capture:** verify `AVCaptureEventInteraction` availability vs our iOS floor. **Gates:** hardware start/stop on iOS (Android already v1). Record the minimum iOS version.
 - [ ] **1.7 AE/AF-lock + control smoke:** the approved wireframe promises "Tap to lock focus & exposure" — verify vision-camera v5 exposes persistent **lock** semantics (tap-focus and exposure-comp are known; a persistent lock is a different API surface). Smoke torch + zoom too. **Gates:** whether AE/AF-lock ships as built, needs a native patch, or the UI copy changes. Record the API reality.
 - [ ] **1.8 MB/min measurement:** record short clips per key format (1080p30, 1080p60, 4K30, 4K60; H.264 vs HEVC) and derive real **MB/min per platform** — the storage-guard constants (P2.5) are folklore until measured. **Gates:** storage-guard accuracy. Record the numbers.
-- [ ] **1.9 Expo-dev-build vs bare RN:** consolidate 1.1–1.8 friction. **Decision:** confirm Expo dev-build, or migrate to bare RN (flips the toolchain every later phase assumes). Record the call + rationale.
-- [ ] **1.10 Write the verdict** to `spike-results.md`, one "on failure →" line per gate; update the spec's §11/§12 if any gate flips; commit.
+- [ ] **1.9 Stack decision (three options, not binary):** consolidate 1.1–1.8 friction + the **4.7.3 ↔ RN 0.86 native-build** result (the trigger). Options: **(a) Expo + vision-camera 4.7.3** — fastest to v1 if the native build passes; accept a NAMED v1.1 item to migrate to v5. **(b) Expo + v5 + a hand-rolled config plugin** (Info.plist strings + gradle bits — small, within native-module competence; buys the maintained line) — flip here if 4.7.3 fails the native build. **(c) bare RN + v5** — most control, most toolchain cost. Lean: (a) → (b) on native-build failure. NOTE: 4.7.3 is the archived 4.x line; for an OSS app whose wedge is pro camera controls the lib's maintenance health is product surface (contributors on fresh RN hit breakage first), so the migration item is real. Record the call + rationale.
+- [ ] **1.10 Write the verdict** to `spike-results.md`, one "on failure →" line per gate. **Record all probe results AS vision-camera 4.7.3 results** — if 1.9 flips the line to v5, the capability-sensitive probes (1.5 mirroring, 1.7 AE/AF-lock, HDR) re-run rather than carry over. Update the spec's §11/§12 if any gate flips; commit.
 
 > **Owner checkpoint:** the spike verdict is reviewed (owner + product-brain) before feature build begins. Any stack reopen or scope change is decided here.
 
@@ -129,7 +129,7 @@ Each phase produces one working, testable slice. **Each per-phase detailed plan 
 - **Phase 6 — Take Review + Trim-Lite** (wireframes 07, 08, 09): auto-review on stop (keep/retake/discard, multi-take); **non-destructive Trim-Lite** (new take + `trimmedFromTakeId` + delete-original) **only if 1.4 cleared it within the drop threshold**, else defer to v1.1; Prompter Appearance sheet (fonts incl. dyslexia, size/line-height/opacity, high-contrast, mirror-off-default). TDD: trim → new take + lineage; keeper/discard mutations.
 - **Phase 7 — Takes Gallery** (wireframe 10): takes grouped by script, res/fps badges, keeper stars, save-to-Photos/share, free-space footer. TDD: grouping + free-space display.
 - **Phase 8 — Settings + Diagnostics** (wireframe 11): storage management, privacy block, opt-in "Share diagnostics" (ring-buffer log, user-share-only egress), repo/license/version. TDD: diagnostics opt-in gate (nothing leaves without the share action).
-- **Phase 9 — Permission priming + accessibility AUDIT** (wireframe 12): first-run permission-prime modal + guided empty-state; then a full **audit** — VoiceOver/TalkBack, Dynamic Type, contrast, touch targets across all screens (components already carry the P2.6 day-one standards; this verifies + fills gaps).
+- **Phase 9 — Permission priming + accessibility AUDIT** (wireframe 12): first-run permission-prime modal; then a full **audit** — VoiceOver/TalkBack, Dynamic Type, contrast, touch targets across all screens (components already carry the P2.6 day-one standards; this verifies + fills gaps).
 - **Phase 10 — Release (owner-gated)** (spec goal: "published to both stores"): brand finalization (**O3 name / icon / bundle IDs — prerequisite**); Apple privacy manifest + Play Data Safety filed to match the diagnostics stance actually built; privacy-forward store listings; **O5 soak** (1–2 wk TestFlight / internal track); store submission. **Submission + dev-account/fee decisions are owner-gated.**
 
 **Deferred to v2+ (not in this plan):** export presets, voice-follow (on-device ASR), teleprompter-only mode (v1.1), Watch/second-device remote, bionic/RTL, cloud sync, behavior-triggering cues, landscape.
