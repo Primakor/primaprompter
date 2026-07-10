@@ -1,52 +1,88 @@
-import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radius } from '../../theme/tokens';
-
-type Script = {
-  id: string;
-  title: string;
-  preview: string;
-  words: number;
-  dur: string;
-  edited: string;
-};
+import type { Script } from '../../types';
+import { useScripts } from './useScripts';
+import { createScript } from '../../db/repositories/scripts';
+import { estimateDurationMs, formatDuration } from '../../lib/estimateDuration';
+import { formatRelative } from '../../lib/formatRelative';
+import { getTeleprompterPrefs } from '../../store/prefs';
 
 const FOLDERS = ['All', 'Reels', 'Client work', 'Personal'];
+const CUE_TAG_RE = /\[[^\]]*\]/g;
 
-// Static sample data — the op-sqlite repository wiring lands in Phase 3.
-const SCRIPTS: Script[] = [
-  {
-    id: '1',
-    title: 'Product launch — take 2',
-    preview:
-      "Hey everyone — today I want to show you the thing we've been building for the last six months…",
-    words: 182,
-    dur: '1:24',
-    edited: '2d ago',
-  },
-  {
-    id: '2',
-    title: 'Skincare routine · morning',
-    preview:
-      "First thing, always — a splash of cold water. No cleanser yet. Here's why that matters…",
-    words: 96,
-    dur: '0:44',
-    edited: '5d ago',
-  },
-  {
-    id: '3',
-    title: 'Weekly update — episode 14',
-    preview:
-      'Big week. Three things I promised you last time, and where each one landed…',
-    words: 241,
-    dur: '1:51',
-    edited: '1w ago',
-  },
-];
+function preview(body: string): string {
+  return body.replace(CUE_TAG_RE, '').replace(/\s+/g, ' ').trim();
+}
+
+function ScriptCard({ script }: { script: Script }) {
+  const wpm = script.wpmOverride ?? getTeleprompterPrefs().defaultWpm;
+  const dur = formatDuration(estimateDurationMs(script.wordCount, wpm));
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`Script: ${script.title}, ${script.wordCount} words, about ${dur}`}
+    >
+      <Text style={styles.cardTitle} numberOfLines={1}>
+        {script.title}
+      </Text>
+      <Text style={styles.cardPreview} numberOfLines={2}>
+        {preview(script.body) || 'Empty script'}
+      </Text>
+      <View style={styles.meta}>
+        <Text style={styles.metaText}>{script.wordCount} words</Text>
+        <Text style={styles.metaDot}>·</Text>
+        <Text style={[styles.metaText, styles.metaAccent]}>≈ {dur}</Text>
+        <Text style={styles.metaDot}>·</Text>
+        <Text style={styles.metaText}>edited {formatRelative(script.updatedAt)}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function EmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <View style={styles.empty}>
+      <View style={styles.glyph}>
+        <Text style={styles.glyphMark}>¶</Text>
+      </View>
+      <Text style={styles.emptyTitle}>Nothing to read yet</Text>
+      <Text style={styles.emptyBody}>
+        Write or paste a script — we'll float it right by the lens while you record, so your
+        eyes stay on camera.
+      </Text>
+      <View style={styles.btnRow}>
+        <Pressable
+          style={styles.btnPrimary}
+          onPress={onNew}
+          accessibilityRole="button"
+          accessibilityLabel="Write a script"
+        >
+          <Text style={styles.btnPrimaryText}>＋ Write a script</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 export function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const [query] = useState('');
+  const { scripts, refresh } = useScripts(query);
+
+  const handleNew = async () => {
+    await createScript({ title: 'Untitled script', body: '' });
+    await refresh();
+  };
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -73,37 +109,31 @@ export function LibraryScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {SCRIPTS.map((s) => (
-          <Pressable
-            key={s.id}
-            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-            accessibilityRole="button"
-            accessibilityLabel={`Script: ${s.title}, ${s.words} words, about ${s.dur}`}
-          >
-            <Text style={styles.cardTitle}>{s.title}</Text>
-            <Text style={styles.cardPreview} numberOfLines={2}>
-              {s.preview}
-            </Text>
-            <View style={styles.meta}>
-              <Text style={styles.metaText}>{s.words} words</Text>
-              <Text style={styles.metaDot}>·</Text>
-              <Text style={[styles.metaText, styles.metaAccent]}>≈ {s.dur}</Text>
-              <Text style={styles.metaDot}>·</Text>
-              <Text style={styles.metaText}>edited {s.edited}</Text>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {scripts === null ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.tally} />
+        </View>
+      ) : scripts.length === 0 ? (
+        <EmptyState onNew={handleNew} />
+      ) : (
+        <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+          {scripts.map((s) => (
+            <ScriptCard key={s.id} script={s} />
+          ))}
+        </ScrollView>
+      )}
 
-      <Pressable
-        style={[styles.fab, { bottom: 84 + insets.bottom }]}
-        accessibilityRole="button"
-        accessibilityLabel="New script"
-      >
-        <Text style={styles.fabPlus}>＋</Text>
-        <Text style={styles.fabText}>New script</Text>
-      </Pressable>
+      {scripts && scripts.length > 0 && (
+        <Pressable
+          style={[styles.fab, { bottom: 84 + insets.bottom }]}
+          onPress={handleNew}
+          accessibilityRole="button"
+          accessibilityLabel="New script"
+        >
+          <Text style={styles.fabPlus}>＋</Text>
+          <Text style={styles.fabText}>New script</Text>
+        </Pressable>
+      )}
 
       <View style={[styles.tabbar, { paddingBottom: insets.bottom || 10 }]}>
         <View style={styles.tab}>
@@ -119,6 +149,7 @@ export function LibraryScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   appbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -170,6 +201,33 @@ const styles = StyleSheet.create({
   metaText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkMuted },
   metaAccent: { color: colors.tally },
   metaDot: { color: colors.inkMuted, opacity: 0.5 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
+  glyph: {
+    width: 92,
+    height: 92,
+    borderRadius: 24,
+    backgroundColor: colors.paperCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  glyphMark: { fontSize: 44, color: colors.tally, fontWeight: '700' },
+  emptyTitle: { fontSize: 19, fontWeight: '700', color: colors.ink, marginBottom: 8 },
+  emptyBody: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.inkMuted,
+    textAlign: 'center',
+  },
+  btnRow: { marginTop: 20, width: '100%' },
+  btnPrimary: {
+    height: 46,
+    borderRadius: 13,
+    backgroundColor: colors.tally,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnPrimaryText: { fontSize: 15, fontWeight: '700', color: colors.tallyInk },
   fab: {
     position: 'absolute',
     right: 16,
