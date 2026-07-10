@@ -4,9 +4,9 @@
 
 **Goal:** Ship v1 of PrimaPrompter — a free, open-source, on-device, vertical-first teleprompter camera app for iOS + Android from a single React Native codebase — against the approved 12-screen wireframes, published to both stores.
 
-**Architecture:** React Native app; `react-native-vision-camera` v5 owns capture; the teleprompter is plain RN views composited over the `<Camera>` preview, scrolled on the UI thread via Reanimated. All persistence is on-device (op-sqlite for relational data, MMKV for prefs). Stack-based navigation anchored on the Script Library. No backend, no accounts, no network.
+**Architecture:** React Native app; `react-native-vision-camera` 4.7.3 owns capture; the teleprompter is plain RN views composited over the `<Camera>` preview, scrolled on the UI thread via Reanimated. All persistence is on-device (op-sqlite for relational data, MMKV for prefs). Stack-based navigation anchored on the Script Library. No backend, no accounts, no network.
 
-**Tech Stack:** React Native (Expo dev-build — config plugin + expo-dev-client — provisional, spike-confirmed), react-native-vision-camera@5, react-native-reanimated, react-native-gesture-handler, @react-navigation/native (native-stack), op-sqlite, react-native-mmkv, TypeScript, Jest + React Native Testing Library. **Node 22 LTS** (Node 25 is non-LTS and unsupported by Expo).
+**Tech Stack:** React Native (Expo dev-build — config plugin + expo-dev-client — provisional, spike-confirmed), react-native-vision-camera@4.7.3, react-native-reanimated, react-native-gesture-handler, @react-navigation/native (native-stack), op-sqlite, react-native-mmkv, TypeScript, Jest + React Native Testing Library. **Node 22 LTS** (Node 25 is non-LTS and unsupported by Expo).
 
 **Source of truth:** design spec `docs/superpowers/specs/2026-07-10-primaprompter-design.md`; approved wireframes (artifact, 12 screens). Reviewed by product-brain (approve-with-amendments, all folded in).
 

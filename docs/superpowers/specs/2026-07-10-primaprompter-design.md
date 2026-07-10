@@ -26,16 +26,16 @@ We win by making the **core loop flawless and nag-free** — script → eye-cont
 
 ## 3. Tech stack
 
-**React Native + [react-native-vision-camera v5](https://github.com/mrousavy/react-native-vision-camera)** as the capture engine, with the teleprompter composited as plain RN views over the `<Camera>` preview.
+**React Native + [react-native-vision-camera 4.7.3](https://github.com/mrousavy/react-native-vision-camera)** as the capture engine, with the teleprompter composited as plain RN views over the `<Camera>` preview.
 
-- **Capture:** react-native-vision-camera **v5** (MIT). Maps the underlying AVFoundation / Camera2 device formats to first-class JS props: fps (incl. 60), resolution (incl. 4K) via format selection, codec (H.264/HEVC via `startRecording` options), video HDR, video stabilization mode, torch, zoom, focus, exposure. All controls are **device-gated** — the UI queries supported formats and only offers what the device reports.
+- **Capture:** react-native-vision-camera **4.7.3** (MIT — the Expo-plugin line). Maps the underlying AVFoundation / Camera2 device formats to first-class JS props: fps (incl. 60), resolution (incl. 4K) via format selection, codec (H.264/HEVC via `startRecording` options), video HDR, video stabilization mode, torch, zoom, focus, exposure. All controls are **device-gated** — the UI queries supported formats and only offers what the device reports.
 - **Animation / gesture:** react-native-reanimated (UI-thread-driven prompter scroll — the native driver, never JS-thread during encode) + react-native-gesture-handler (pinch-zoom, tap-focus, drag-scrub). *No frame-processor deps in v1 (no `react-native-worklets-core`) — add only if the spike proves a need.*
 - **Storage:** op-sqlite (relational: scripts, folders, take metadata) + react-native-mmkv (key-value prefs).
 - **Shell:** Expo dev-build (config plugin + expo-dev-client) **or** bare RN — resolved by the week-1 device spike. Expo Go cannot load native camera code; a custom dev-build is mandatory from day one.
 - **Navigation:** @react-navigation/native (native-stack).
 
 **Verified corrections** (adversarial verification, accepted):
-- Use **v5**, not v4 — v4 is archived as of mid-2026; v5 capabilities are equal or better.
+- Use **v4.7.3** — the earlier "use v5" research claim was wrong for Expo: v5.1.0 ships **no** Expo config plugin (`app.plugin.js` absent → `expo prebuild` fails), while the 4.7.x line is Expo-ready. Bootstrap-verified 2026-07-10; the native build vs RN 0.86 / SDK 57 is spike-validated.
 - Exposure control is **exposure-compensation bias + AE/AF lock**, NOT manual lens position or manual ISO/shutter. UI copy must never promise "manual exposure."
 - **cinematic / cinematic-extended stabilization are iOS-only**; Android exposes off / auto / standard. HEVC is device-dependent on Android. This is handled by the capability-driven UI.
 

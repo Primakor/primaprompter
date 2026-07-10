@@ -22,6 +22,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "PrimaPrompter uses the camera to record your videos — everything stays on your device.",
+          "enableMicrophonePermission": true,
+          "microphonePermissionText": "PrimaPrompter uses the microphone to record audio with your videos — everything stays on your device."
+        }
+      ]
+    ]
   }
 }
